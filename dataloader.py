@@ -28,8 +28,8 @@ def dataloader(data_path, batch_size=32, device=torch.device('cpu'), fix_length=
 
 if __name__ == '__main__':
 
-    train_iter, input_vocab, target_vocab = dataloader('train.json')
-    dev_iter, _, _ = dataloader('dev.json', input_vocab=input_vocab, target_vocab=target_vocab)
+    train_iter, input_vocab, target_vocab = dataloader('data/train.json')
+    dev_iter, _, _ = dataloader('data/dev.json', input_vocab=input_vocab, target_vocab=target_vocab)
     # %%
     for x in train_iter:
         print(x.target)
@@ -37,4 +37,9 @@ if __name__ == '__main__':
         print(x.situation)
         print(input_vocab.stoi)
         print(input_vocab.itos)
+        break
+
+    for x in dev_iter:
+        print(x.target)
+        print(x.input)
         break

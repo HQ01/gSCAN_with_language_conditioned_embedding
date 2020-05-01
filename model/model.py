@@ -30,6 +30,8 @@ class GSCAN_model(nn.Module):
     def __init__(self, pad_idx, target_eos_idx, input_vocab_size, target_vocab_size):
         super().__init__()
 
+        
+        # \TODO if we want to add embedding here.
         # if cfg.INIT_WRD_EMB_FROM_FILE:
         #     embeddingsInit = np.load(cfg.WRD_EMB_INIT_FILE)
         #     assert embeddingsInit.shape == (num_vocab-1, cfg.WRD_EMB_DIM)

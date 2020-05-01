@@ -48,9 +48,6 @@ class Encoder(nn.Module):
         cmds_out, cmds_h = self.rnn0(cmd, cmdLengths) #\TODO check why max length increase by 1 after lstm
         cmds_h = self.cmd_h_drop(cmds_h)
 
-        # print("cmd_out shape is", cmds_out.size()) 10 7 512
-        # print("cmd_h shape is", cmds_h.size()) 10 512
-        # raise NotImplementedError
 
         return cmds_out, cmds_h
 

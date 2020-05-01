@@ -66,21 +66,10 @@ class LGCNLayer(nn.Module):
     def extract_textual_command(self, cmd_h, cmd_out, cmdLength, t):
 
         raw_att = self.W1(cmd_out * self.W2_layers[t](F.relu(self.W3(cmd_h)).unsqueeze(1))).squeeze(-1)
-        #raw_att = self.W1(cmd_out * self.W2_layers[t](F.relu(self.W3(cmd_h)))).squeeze(-1) #\TODO cmd_out * sth might be wrong
         
         mask = sequence_mask(cmdLength)
-        #maxlen = raw_att.size(1)
-        #mask = th.arange(maxlen)[None, :] < cmdLength[:, None]
         att = masked_softmax(raw_att, mask)
         cmd = th.bmm(att[:, None, :], cmd_out).squeeze(1)
-
-        # print("cmd_h shape is ", cmd_h.size())
-        # print("cmd_out shape is ", cmd_out.size())
-        # print("cmdLength shape is ", cmdLength.size())
-        # print("raw_att size is ", raw_att.size())
-        # print("att size is ", att.size())
-        # print("cmd size after attention is ", cmd.size())
-        # raise NotImplementedError
 
         return cmd
 
@@ -114,7 +103,7 @@ class LGCNLayer(nn.Module):
         g.update_all(fn.u_mul_e('ft', 'a', 'm'), fn.sum('m', 's'))
         ctx = self.W11(ctx) + self.W11b(g.ndata['s'])
 
-        rst = ctx #\TODO EXTRA: add activation?
+        rst = ctx
 
         return rst
 
@@ -128,19 +117,15 @@ class LGCNLayer(nn.Module):
         
         x_out = self.W12(th.cat([x_loc, x_ctx], dim=-1))
 
-        # print(graph_membership)
-        # accumulate_graph_membership = [th.sum(graph_membership[:i]) for i in range(graph_membership.size(0))]
-        # print(accumulate_graph_membership)
 
-        # not sure unbatching using dgl will break or not
+
+        # \TODO ATTENTION: not sure unbatching using dgl will break or not. Seems not
         batch_g.ndata['out'] = x_out
         g_list = dgl.unbatch(batch_g)
         ret = []
         for g in g_list:
             ret.append(g.ndata['out'])
-        # print("x_out size is", x_out.size())
-        # print(len(ret))
-        # print(ret[0].size())
+
         return ret
 
 

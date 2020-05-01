@@ -35,7 +35,7 @@ def dataloader(data_path, batch_size=32, device=torch.device('cpu'), fix_length=
     iterator = tt.data.Iterator(dataset, batch_size=batch_size)
     return iterator, INPUT_FIELD.vocab, TARGET_FIELD.vocab
 
-def evaluate():
+def evaluate(): #\TODO evaluate function might be broken now. This is Ruis' code. 
     accuracies = []
     target_accuracies = []
     exact_math = 0
@@ -65,6 +65,7 @@ def train(train_data_path, val_data_path):
 
     #\TODO decide whether to add sos token and eos token to each input command/target label
     # Each data item dimension
+    
     '''
     Input (command) [0]: batch_size x max_cmd_len       [1]: batch_size x 0 (len for each cmd)
     Situation: batch_size x grid x grid x feat_size
@@ -72,13 +73,9 @@ def train(train_data_path, val_data_path):
 
     max_cmd_len = 6, max_action_len = 16
     '''
-    # training_set = GroundedScanDataset(data_path, data_directory, split="train",
-    #                                    input_vocabulary_file=input_vocab_path,
-    #                                    target_vocabulary_file=target_vocab_path,
-    #                                    generate_vocabulary=generate_vocabularies, k=k)
-    # training_set.read_dataset(max_examples=max_training_examples,
-    #                           simple_situation_representation=simple_situation_representation)
     logger.info("Done Loading Training set.")
+
+    #\TODO add statistics for train/val set, see example below
     # logger.info("  Loaded {} training examples.".format(training_set.num_examples))
     # logger.info("  Input vocabulary size training set: {}".format(training_set.input_vocabulary_size))
     # logger.info("  Most common input words: {}".format(training_set.input_vocabulary.most_common(5)))
@@ -96,11 +93,7 @@ def train(train_data_path, val_data_path):
                                                             batch_size=cfg.TRAIN.BATCH_SIZE) #\TODO add k and statistics
     
     val_input_vocab_size, val_target_vocab_size = len(val_input_vocab.itos), len(val_target_vocab.itos)
-    # val_set = GroundedScanDataset(data_path, data_directory, split="dev",  # TODO: use dev set here
-    #                                input_vocabulary_file=input_vocab_path,
-    #                                target_vocabulary_file=target_vocab_path, generate_vocabulary=False, k=0)
-    # val_set.read_dataset(max_examples=None,
-    #                       simple_situation_representation=simple_situation_representation)
+
 
     # Shuffle the test set to make sure that if we only evaluate max_testing_examples we get a random part of the set.
     
@@ -108,14 +101,6 @@ def train(train_data_path, val_data_path):
     logger.info("Done Loading Dev. set.")
 
     model = GSCAN_model(pad_idx, eos_idx, train_input_vocab_size, train_target_vocab_size)
-
-    # model = GSCAN_model(input_vocabulary_size=training_set.input_vocabulary_size,
-    #               target_vocabulary_size=training_set.target_vocabulary_size,
-    #               num_cnn_channels=training_set.image_channels,
-    #               input_padding_idx=training_set.input_vocabulary.pad_idx,
-    #               target_pad_idx=training_set.target_vocabulary.pad_idx,
-    #               target_eos_idx=training_set.target_vocabulary.eos_idx,
-    #               **cfg)
 
 
     model = model.cuda() if use_cuda else model
@@ -160,23 +145,6 @@ def train(train_data_path, val_data_path):
                 target_loss = model.get_auxiliary_loss(target_position_scores, x.target)#\TODO x.target currently does not include ground truth target position
             loss += cfg.TRAIN.WEIGHT_TARGET_LOSS * target_loss
 
-        # for (input_batch, input_lengths, _, situation_batch, _, target_batch,
-        #      target_lengths, agent_positions, target_positions) in training_set.get_data_iterator(
-        #         batch_size=training_batch_size):
-            # is_best = False
-            # model.train()
-
-            # Forward pass.
-            # target_scores, target_position_scores = model(commands_input=input_batch, commands_lengths=input_lengths,
-            #                                               situations_input=situation_batch, target_batch=target_batch,
-            #                                               target_lengths=target_lengths)
-            # loss = model.get_loss(target_scores, target_batch)
-            # if auxiliary_task:
-            #     target_loss = model.get_auxiliary_loss(target_position_scores, target_positions)
-            # else:
-            #     target_loss = 0
-            # loss += weight_target_loss * target_loss
-
             # Backward pass and update model parameters.
             loss.backward()
             optimizer.step()
@@ -196,9 +164,8 @@ def train(train_data_path, val_data_path):
                             " aux. accuracy target pos %5.2f" % (training_iteration, loss, accuracy, exact_match,
                                                                  learning_rate, auxiliary_accuracy_target))
             
-            raise NotImplementedError
-            # Evaluate on test set.
-            if training_iteration % flags.evaluate_every == 0:
+
+            if training_iteration % cfg.EVALUATE_EVERY == 0: #\TODO add evaluation
                 with torch.no_grad():
                     model.eval()
                     logger.info("Evaluating..")
@@ -226,8 +193,6 @@ def train(train_data_path, val_data_path):
                                               optimizer_state_dict=optimizer.state_dict())
 
             training_iteration += 1
-            if training_iteration > flags.max_training_iterations:
-                break
     logger.info("Finished training.")
 
 
@@ -258,6 +223,8 @@ def main(flags):
 
     if cfg.MODE == "train":
         train(train_data_path=train_data_path, val_data_path=val_data_path)
+
+    #\TODO enable running on test set. See below.
 
 
     # elif flags["mode"] == "test":
@@ -328,6 +295,7 @@ if __name__ == "__main__":
 
 
     parser = argparse.ArgumentParser(description="LGCN models for GSCAN")
+    #\TODO merge args into config. See Ronghang's code.
     args = parser.parse_args()
 
     

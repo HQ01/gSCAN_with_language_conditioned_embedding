@@ -75,7 +75,7 @@ def sequence_mask(sequence_lengths: torch.LongTensor, max_len=None) -> torch.ten
 
 
 def masked_softmax(
-    vector: torch.Tensor, mask: torch.BoolTensor, dim: int = -1, memory_efficient: bool = False,
+    vector: torch.Tensor, mask: torch.BoolTensor, dim: int = -1, memory_efficient: bool = True,
 ) -> torch.Tensor:
     """
     `torch.nn.functional.softmax(vector)` does not work if some elements of `vector` should be

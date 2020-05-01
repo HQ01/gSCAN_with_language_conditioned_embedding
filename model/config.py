@@ -54,7 +54,7 @@ __C.WRD_EMB_INIT_FILE = ''
 ## Command Encoder
 __C.CMD_D_EMBED = 300
 __C.CMD_D_ENC = 512
-__C.CMD_D_H = 128
+__C.CMD_D_H = 512 # Same as ENC_DIM
 
 ## Situation Encoder (LGCN)
 __C.SITU_D_FEAT = 16
@@ -115,6 +115,9 @@ __C.BBOX_IOU_THRESH = .5
 __C.IMG_H = 320  # size in loc
 __C.IMG_W = 480  # size in loc
 
+# Loss option
+__C.AUXILIARY_TASK = False
+
 # --------------------------------------------------------------------------- #
 # training options
 # --------------------------------------------------------------------------- #
@@ -133,8 +136,8 @@ __C.TRAIN.SOLVER.ADAM_BETA2 = 0.999
 __C.TRAIN.SOLVER.LR_DECAY_STEP = 20000
 __C.TRAIN.MAX_EPOCH = 25
 __C.TRAIN.RUN_EVAL = True
-__C.PRINT_EVERY = 2
-__C.EVALUATE_EVERY = 2
+__C.PRINT_EVERY = 1
+__C.EVALUATE_EVERY = 1
 
 #GSCAN Specific
 __C.TRAIN.K = 0

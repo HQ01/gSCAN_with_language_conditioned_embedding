@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import numpy as np
 
 from .config import cfg
+from .utils import *
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +45,12 @@ class Encoder(nn.Module):
         cmd = self.enc_input_drop(cmd)
 
         # RNN (LSTM)
-        cmds_out, cmds_h = self.rnn0(cmd, cmdLengths)
+        cmds_out, cmds_h = self.rnn0(cmd, cmdLengths) #\TODO check why max length increase by 1 after lstm
         cmds_h = self.cmd_h_drop(cmds_h)
+
+        # print("cmd_out shape is", cmds_out.size()) 10 7 512
+        # print("cmd_h shape is", cmds_h.size()) 10 512
+        # raise NotImplementedError
 
         return cmds_out, cmds_h
 
@@ -57,7 +62,7 @@ class BiLSTM(nn.Module):
             input_size=cfg.WRD_EMB_DIM, hidden_size=cfg.ENC_DIM // 2,
             num_layers=1, batch_first=True, bidirectional=True)
 
-        d = cfg.ENC_DIM // 2
+        d = cfg.CMD_D_ENC // 2 # before is ENC_DIM
 
         # initialize LSTM weights (to be consistent with TensorFlow)
         fan_avg = (d*4 + (d+cfg.WRD_EMB_DIM)) / 2.

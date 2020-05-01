@@ -16,9 +16,10 @@ import networkx as nx
 import torch as th
 import torch.nn.functional as F
 import torch.nn as nn
-from .gnn import *
+from .gnn import LGCNLayer
 from .config import cfg
 from .encoder import Encoder
+from .decoder import Decoder
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ device = th.device("cuda" if th.cuda.is_available() else "cpu")
 
 class GSCAN_model(nn.Module):
     def __init__(self, pad_idx, target_eos_idx, input_vocab_size, target_vocab_size):
-        super().__init()
+        super().__init__()
 
         # if cfg.INIT_WRD_EMB_FROM_FILE:
         #     embeddingsInit = np.load(cfg.WRD_EMB_INIT_FILE)
@@ -49,6 +50,7 @@ class GSCAN_model(nn.Module):
         self.tanh = nn.Tanh()
         self.target_eos_idx = target_eos_idx
         self.target_pad_idx = pad_idx
+        self.auxiliary_task = cfg.AUXILIARY_TASK
 
 
         self.output_directory = cfg.OUTPUT_DIRECTORY
@@ -56,6 +58,8 @@ class GSCAN_model(nn.Module):
         self.best_iteration = 0
         self.best_exact_match = 0
         self.best_accuracy = 0
+
+        self.device = th.device("cuda" if th.cuda.is_available() else "cpu")
     
     def nonzero_extractor(self, x):
         lx = []
@@ -65,8 +69,39 @@ class GSCAN_model(nn.Module):
         return lx
 
     
-    def construct_situation_length(self):
-        return None
+    @staticmethod
+    def remove_start_of_sequence(input_tensor):
+        """Get rid of SOS-tokens in targets batch and append a padding token to each example in the batch."""
+        batch_size, max_time = input_tensor.size()
+        input_tensor = input_tensor[:, 1:]
+        output_tensor = th.cat([input_tensor, th.zeros(batch_size, device=device, dtype=th.long).unsqueeze(
+            dim=1)], dim=1)
+        return output_tensor
+
+    
+    def get_metrics(self, target_scores, targets):
+        """
+        :param target_scores: probabilities over target vocabulary outputted by the model, of size
+                              [batch_size, max_target_length, target_vocab_size]
+        :param targets:  ground-truth targets of size [batch_size, max_target_length]
+        :return: scalar float of accuracy averaged over sequence length and batch size.
+        """
+        with th.no_grad():
+            targets = self.remove_start_of_sequence(targets)
+            mask = (targets != self.target_pad_idx).long()
+            total = mask.sum().data.item()
+            predicted_targets = target_scores.max(dim=2)[1]
+            equal_targets = th.eq(targets.data, predicted_targets.data).long()
+            match_targets = (equal_targets * mask)
+            match_sum_per_example = match_targets.sum(dim=1)
+            expected_sum_per_example = mask.sum(dim=1)
+            batch_size = expected_sum_per_example.size(0)
+            exact_match = 100. * (match_sum_per_example == expected_sum_per_example).sum().data.item() / batch_size
+            match_targets_sum = match_targets.sum().data.item()
+            accuracy = 100. * match_targets_sum / total
+        return accuracy, exact_match
+
+    
     
 
     
@@ -78,31 +113,41 @@ class GSCAN_model(nn.Module):
         
         '''
         batchSize = cmd_batch[0].size(0)
+        print("batch size is ", batchSize)
         cmdIndices, cmdLengths = cmd_batch[0], cmd_batch[1]
+        tgtIndices, tgtLengths = tgt_batch[0], tgt_batch[1]
 
         # LSTM
         cmd_out, cmd_h = self.encoder(cmdIndices, cmdLengths)
+        print("cmd_out size is ", cmd_out.size())
+        print("cmd_h size is ", cmd_h.size())
 
-        xs = self.nonzero_extractor(situation_batch[0])
+        # Building computation graph for LGCN
+        xs = self.nonzero_extractor(situation_batch)
         gs = []
+        situations_lengths = []
+        graph_membership = []
         dgl_gs =[dgl.DGLGraph() for _ in range(batchSize)]
-        for x in xs:
+        for i, x in enumerate(xs):
             gs.append(nx.complete_graph(x.size(0)).to_directed())
+            situations_lengths.append(x.size(0))
+            graph_membership += [i for _ in range(x.size(0))]
         for i in range(len(dgl_gs)):
             dgl_gs[i].from_networkx(gs[i])
         batch_g = dgl.batch(dgl_gs)
         situation_X = th.cat(xs, dim=0)
+        graph_membership = th.tensor(graph_membership, dtype=th.long, device=self.device)
+
 
         #LGCN
-        situation_out = self.lgcn(situation_X, batch_g, cmd_h, cmd_out, cmdLengths, batchSize)
-
-        #\TODO pad situation_outs
-        situations_lengths = self.construct_situation_length()
+        situation_out = self.lgcn(situation_X, batch_g, cmd_h, cmd_out, cmdLengths, batchSize, graph_membership)
+        situation_out = th.nn.utils.rnn.pad_sequence(situation_out, batch_first=True)
 
 
         #Decoder
-        decoder_output, context_situation = self.decoder(tgt_batch, initial_hidden = cmd_h, encoded_command=cmd_out, command_lengths=cmdLengths,
-        encoded_situations=situation_out, situation_length=situations_lengths)
+        decoder_output, context_situation = self.decoder(tgtIndices, tgtLengths, initial_hidden = cmd_h, encoded_commands=cmd_out, commands_lengths=cmdLengths,
+        encoded_situations=situation_out, situations_lengths=situations_lengths)
+
 
         if self.auxiliary_task:
             target_position_scores = self.auxilaiary_task_forward(context_situation)
@@ -113,7 +158,7 @@ class GSCAN_model(nn.Module):
     
 
     def get_loss(self, target_score, target):
-        target = self.remove_start_of_sequence(target)
+        target = self.remove_start_of_sequence(target) #\TODO make sure include sos in target
 
         # Calculate the loss
         _, _, vocabulary_size = target_score.size()

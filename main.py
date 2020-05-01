@@ -8,8 +8,9 @@ import torchtext as tt
 import torchtext.data as data
 from torch.optim.lr_scheduler import LambdaLR
 
-from utils import *
+from model.utils import *
 from model.config import cfg
+from model.model import GSCAN_model
 
 # import models
 def dataloader(data_path, batch_size=32, device=torch.device('cpu'), fix_length=None, input_vocab=None, target_vocab=None):
@@ -107,7 +108,6 @@ def train(train_data_path, val_data_path):
     logger.info("Done Loading Dev. set.")
 
     model = GSCAN_model(pad_idx, eos_idx, train_input_vocab_size, train_target_vocab_size)
-    raise NotImplementedError
 
     # model = GSCAN_model(input_vocabulary_size=training_set.input_vocabulary_size,
     #               target_vocabulary_size=training_set.target_vocabulary_size,
@@ -124,7 +124,7 @@ def train(train_data_path, val_data_path):
     trainable_parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
     optimizer = torch.optim.Adam(trainable_parameters, lr=cfg.TRAIN.SOLVER.LR, betas=(cfg.TRAIN.SOLVER.ADAM_BETA1, cfg.TRAIN.SOLVER.ADAM_BETA2))
     scheduler = LambdaLR(optimizer,
-                         lr_lambda=lambda t: cfg.TRAIN.SOLVER.LR_DECAY ** (t / cfg.SOLVER.LR_DECAY_STEP))
+                         lr_lambda=lambda t: cfg.TRAIN.SOLVER.LR_DECAY ** (t / cfg.TRAIN.SOLVER.LR_DECAY_STEP))
 
     # Load model and vocabularies if resuming.
     start_iteration = 1
@@ -133,28 +133,32 @@ def train(train_data_path, val_data_path):
     best_exact_match = 0
     best_loss = float('inf')
 
-    if flags.resume_from_file:
-        assert os.path.isfile(flags.resume_from_file), "No checkpoint found at {}".format(flags.resume_from_file)
-        logger.info("Loading checkpoint from file at '{}'".format(flags.resume_from_file))
-        optimizer_state_dict = model.load_model(flags.resume_from_file)
+    if cfg.RESUME_FROM_FILE:
+        assert os.path.isfile(cfg.RESUME_FROM_FILE), "No checkpoint found at {}".format(cfg.RESUME_FROM_FILE)
+        logger.info("Loading checkpoint from file at '{}'".format(cfg.RESUME_FROM_FILE))
+        optimizer_state_dict = model.load_model(cfg.RESUME_FROM_FILE)
         optimizer.load_state_dict(optimizer_state_dict)
         start_iteration = model.trained_iterations
-        logger.info("Loaded checkpoint '{}' (iter {})".format(flags.resume_from_file, start_iteration))
+        logger.info("Loaded checkpoint '{}' (iter {})".format(cfg.RESUME_FROM_FILE, start_iteration))
 
     logger.info("Training starts..")
     training_iteration = start_iteration
-    while training_iteration < flags.max_training_iterations: # iterations here actually means "epoch"
+    while training_iteration < cfg.TRAIN.MAX_EPOCH: # iterations here actually means "epoch"
 
         # Shuffle the dataset and loop over it.
         # training_set.shuffle_data() \TODO add reshuffle option in iterator
         for x in train_iter:
             is_best = False
             model.train()
-            target_scores, target_position_scores = model(x.input, x.situation) #\TODO: model does not output target position prediction
-            loss = model.get_loss(target_scores, x.target)
-            if flags.auxiliary_task:
+            target_scores, target_position_scores = model(x.input, x.situation, x.target) #\TODO: model does not output target position prediction
+            
+            loss = model.get_loss(target_scores, x.target[0])
+
+
+            target_loss = 0
+            if cfg.AUXILIARY_TASK:
                 target_loss = model.get_auxiliary_loss(target_position_scores, x.target)#\TODO x.target currently does not include ground truth target position
-            loss += flags.weight_target_loss * target_loss
+            loss += cfg.TRAIN.WEIGHT_TARGET_LOSS * target_loss
 
         # for (input_batch, input_lengths, _, situation_batch, _, target_batch,
         #      target_lengths, agent_positions, target_positions) in training_set.get_data_iterator(
@@ -181,9 +185,9 @@ def train(train_data_path, val_data_path):
             model.update_state(is_best=is_best)
 
             # Print current metrics.
-            if training_iteration % flags.print_every == 0:
-                accuracy, exact_match = model.get_metrics(target_scores, x.target)
-                if flags.auxiliary_task:
+            if training_iteration % cfg.PRINT_EVERY == 0:
+                accuracy, exact_match = model.get_metrics(target_scores, x.target[0])
+                if cfg.AUXILIARY_TASK:
                     auxiliary_accuracy_target = model.get_auxiliary_accuracy(target_position_scores, x.target)#\TODO add ground truth target position into x.target
                 else:
                     auxiliary_accuracy_target = 0.
@@ -191,7 +195,8 @@ def train(train_data_path, val_data_path):
                 logger.info("Iteration %08d, loss %8.4f, accuracy %5.2f, exact match %5.2f, learning_rate %.5f,"
                             " aux. accuracy target pos %5.2f" % (training_iteration, loss, accuracy, exact_match,
                                                                  learning_rate, auxiliary_accuracy_target))
-
+            
+            raise NotImplementedError
             # Evaluate on test set.
             if training_iteration % flags.evaluate_every == 0:
                 with torch.no_grad():

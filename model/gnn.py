@@ -29,7 +29,9 @@ class LGCNLayer(nn.Module):
         
         # X_loc init Config
         self.map_x_loc = nn.Linear(d_x, d_loc, bias=False)
+        # self.map_x_loc = nn.Linear(d_x, 150, bias=False)
         self.x_loc_drop = nn.Dropout(1 - cfg.locDropout)
+        self.read_drop = nn.Dropout(1 - cfg.readDropout)
 
         ## Command Extraction Config
         self.W1 = nn.Linear(d_cmd, 1, bias=False)
@@ -55,9 +57,10 @@ class LGCNLayer(nn.Module):
         self.initMem = nn.Parameter(th.randn(1, d_ctx))
     
     def loc_ctx_init(self, xs):
-        x_loc = F.normalize(xs, dim=-1) # could add linear transformation
-        x_loc = self.x_loc_drop(self.map_x_loc(x_loc))
-        x_loc = F.normalize(x_loc, dim=-1)
+        #x_loc = F.normalize(xs, dim=-1) # could add linear transformation
+        #x_loc = self.x_loc_drop(self.map_x_loc(x_loc))
+        #x_loc = F.normalize(x_loc, dim=-1)
+        x_loc = self.x_loc_drop(self.map_x_loc(xs))
         x_ctx = self.initMem.expand(x_loc.size())
 
 
@@ -82,7 +85,7 @@ class LGCNLayer(nn.Module):
 
         g = g.local_var()
         c_broadcast = F.embedding(graph_membership, c)
-        fuse = self.W4(h) * self.W5(ctx)
+        fuse = self.W4(self.read_drop(h)) * self.W5(self.read_drop(ctx))
         cat = th.cat([h, ctx, fuse], dim=1)
 
 

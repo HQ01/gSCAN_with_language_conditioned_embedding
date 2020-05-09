@@ -23,7 +23,7 @@ class Encoder(nn.Module):
         
         # configs
         self.d_x = input_size
-        self.d_embed = cfg.WRD_EMB_DIM
+        self.d_embed = cfg.CMD_D_EMBED
 
 
         # layers
@@ -56,13 +56,13 @@ class BiLSTM(nn.Module):
     def __init__(self, forget_gate_bias=1.):
         super().__init__()
         self.bilstm = torch.nn.LSTM(
-            input_size=cfg.WRD_EMB_DIM, hidden_size=cfg.ENC_DIM // 2,
+            input_size=cfg.CMD_D_EMBED, hidden_size=cfg.CMD_D_ENC // 2,
             num_layers=1, batch_first=True, bidirectional=True)
 
         d = cfg.CMD_D_ENC // 2 # before is ENC_DIM
 
         # initialize LSTM weights (to be consistent with TensorFlow)
-        fan_avg = (d*4 + (d+cfg.WRD_EMB_DIM)) / 2.
+        fan_avg = (d*4 + (d+cfg.CMD_D_EMBED)) / 2.
         bound = np.sqrt(3. / fan_avg)
         nn.init.uniform_(self.bilstm.weight_ih_l0, -bound, bound)
         nn.init.uniform_(self.bilstm.weight_hh_l0, -bound, bound)

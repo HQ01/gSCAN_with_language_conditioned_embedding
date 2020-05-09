@@ -3,11 +3,14 @@ import torchtext as tt
 import torchtext.data as data
 
 
-def dataloader(data_path, batch_size=32, device=torch.device('cpu'), fix_length=None, input_vocab=None, target_vocab=None):
+def dataloader(data_path, batch_size=32, use_cuda=False, fix_length=None, input_vocab=None, target_vocab=None):
     INPUT_FIELD = tt.data.Field(sequential=True, include_lengths=True, batch_first=True, fix_length=fix_length)
+    # INPUT_FIELD = tt.data.Field(sequential=True, include_lengths=True, batch_first=True, fix_length=fix_length)
     TARGET_FIELD = tt.data.Field(sequential=True, include_lengths=True, batch_first=True, is_target=True,
-                                 fix_length=fix_length)
-    SITUATION_FIELD = tt.data.RawField(postprocessing=lambda x: torch.FloatTensor(x)) if device == torch.device('cpu') \
+                                 fix_length=fix_length, init_token='<sos>', eos_token='<eos>')
+    # TARGET_FIELD = tt.data.Field(sequential=True, include_lengths=True, batch_first=True, is_target=True,
+    #                              fix_length=fix_length)
+    SITUATION_FIELD = tt.data.RawField(postprocessing=lambda x: torch.FloatTensor(x)) if not use_cuda \
         else tt.data.RawField(postprocessing=lambda x: torch.cuda.FloatTensor(x))
     dataset = tt.data.TabularDataset(path=data_path, format="json",
                                      fields={'input': ('input', INPUT_FIELD),
@@ -22,7 +25,10 @@ def dataloader(data_path, batch_size=32, device=torch.device('cpu'), fix_length=
         TARGET_FIELD.build_vocab(dataset)
     else:
         TARGET_FIELD.vocab = target_vocab
-    iterator = tt.data.Iterator(dataset, batch_size=batch_size)
+    if use_cuda:
+        iterator = tt.data.Iterator(dataset, batch_size=batch_size, device=torch.device(type='cuda'))
+    else:
+        iterator = tt.data.Iterator(dataset, batch_size=batch_size, device=torch.device(type='cpu'))
     return iterator, INPUT_FIELD.vocab, TARGET_FIELD.vocab
 
 

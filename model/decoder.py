@@ -115,7 +115,7 @@ class BahdanauAttentionDecoderRNN(nn.Module):
         # Bahdanau attention
         context_command, attention_weights_commands = self.textual_attention(
             queries=last_hidden.transpose(0, 1), projected_keys=encoded_commands,
-            values=encoded_commands, memory_lengths=commands_lengths)
+          values=encoded_commands, memory_lengths=commands_lengths)
         batch_size, image_num_memory, _ = encoded_situations.size()
         #situation_lengths = [image_num_memory for _ in range(batch_size)]
 
@@ -248,10 +248,11 @@ class BahdanauAttentionDecoderRNN(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, target_vocab_size, target_pad_idx): #\TODO: does target vocab size include special tokens?
+    def __init__(self, target_vocab_size, target_pad_idx, visual_key_size=cfg.SITU_D_CTX,\
+            visual_query_size=cfg.DEC_D_H, visual_hidden_size=cfg.DEC_D_H): #\TODO: does target vocab size include special tokens?
         super().__init__()
-        self.visual_attention = Attention(key_size = cfg.SITU_D_CTX,\
-            query_size = cfg.DEC_D_H, hidden_size = cfg.DEC_D_H)
+        self.visual_attention = Attention(key_size = visual_key_size,\
+            query_size=visual_query_size, hidden_size=visual_hidden_size)
         self.textual_attention = Attention(key_size = cfg.CMD_D_H, query_size=cfg.DEC_D_H, hidden_size=cfg.DEC_D_H)
 
         
@@ -271,7 +272,7 @@ class Decoder(nn.Module):
     def forward(self, target_batch, target_length, initial_hidden, encoded_commands,
                 commands_lengths, encoded_situations, situations_lengths):
 
-        print("initial_hidden size is ", initial_hidden.size())
+        # print("initial_hidden size is ", initial_hidden.size())
 
         initial_hidden = self.attentionDecoder.initialize_hidden(
             self.tanh(self.enc_hidden_to_dec_hidden(initial_hidden))

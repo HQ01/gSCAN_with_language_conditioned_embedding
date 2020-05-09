@@ -31,8 +31,11 @@ cfg = __C
 # general options
 # --------------------------------------------------------------------------- #
 ##OS options
-__C.DATA_DIRECTORY = "data"
+# __C.DATA_DIRECTORY = "data/parsed_dataset"
+__C.DATA_DIRECTORY = "data/sampled_parsed_dataset"
+# __C.DATA_DIRECTORY = "data/sampled_dataset"
 __C.OUTPUT_DIRECTORY = "output"
+#__C.RESUME_FROM_FILE = "output/model_best.pth.tar"
 __C.RESUME_FROM_FILE = ""
 __C.EXP_NAME = '<fill-with-filename>'
 __C.OUTPUT_FILE_NAME = "predict.json"
@@ -52,14 +55,16 @@ __C.WRD_EMB_INIT_FILE = ''
 # model options
 # --------------------------------------------------------------------------- #
 ## Command Encoder
-__C.CMD_D_EMBED = 300
-__C.CMD_D_ENC = 512
-__C.CMD_D_H = 512 # Same as ENC_DIM
+__C.CMD_D_EMBED = 32
+__C.CMD_D_ENC = 256
+__C.CMD_D_H = 256 # Same as ENC_DIM
 
 ## Situation Encoder (LGCN)
-__C.SITU_D_FEAT = 16
-__C.SITU_D_CTX = 512
-__C.SITU_D_CMD = 512
+# __C.SITU_D_FEAT = 16
+__C.SITU_D_FEAT = 150
+__C.SITU_D_CTX = 256 # 512
+__C.SITU_D_CMD = 256 # 512
+#1
 
 ## Deoder
 __C.DEC_D_H = 256
@@ -77,16 +82,16 @@ __C.ADD_POS_ENC = True
 __C.PE_DIM = 128
 __C.PE_SCALE = 1.
 
-__C.MSG_ITER_NUM = 4
+__C.MSG_ITER_NUM = 1
 
 __C.STEM_NORMALIZE = True
 __C.STEM_LINEAR = True
 __C.STEM_CNN = False
 __C.STEM_CNN_DIM = 512
 __C.STEM_RENORMALIZE = False
-__C.WRD_EMB_DIM = 300
+# __C.WRD_EMB_DIM = 300
 __C.WRD_EMB_FIXED = False
-__C.ENC_DIM = 512
+# __C.ENC_DIM = 512
 __C.CMD_DIM = 512
 __C.CMD_INPUT_ACT = 'ELU'
 __C.CTX_DIM = 512
@@ -122,22 +127,24 @@ __C.AUXILIARY_TASK = False
 # training options
 # --------------------------------------------------------------------------- #
 __C.TRAIN = AttrDict()
-__C.TRAIN.BATCH_SIZE = 10
+__C.TRAIN.BATCH_SIZE = 1024
 __C.TRAIN.START_EPOCH = 0
 
 __C.TRAIN.CLIP_GRADIENTS = True
 __C.TRAIN.GRAD_MAX_NORM = 8.
 
 __C.TRAIN.SOLVER = AttrDict()
-__C.TRAIN.SOLVER.LR = 3e-4
+# __C.TRAIN.SOLVER.LR = 3e-4
+__C.TRAIN.SOLVER.LR = 1e-3
 __C.TRAIN.SOLVER.LR_DECAY = 1.
 __C.TRAIN.SOLVER.ADAM_BETA1 = 0.9
 __C.TRAIN.SOLVER.ADAM_BETA2 = 0.999
 __C.TRAIN.SOLVER.LR_DECAY_STEP = 20000
-__C.TRAIN.MAX_EPOCH = 25
+__C.TRAIN.MAX_EPOCH = 1000
 __C.TRAIN.RUN_EVAL = True
-__C.PRINT_EVERY = 1
-__C.EVALUATE_EVERY = 10000000
+__C.TRAIN.USE_MULTI_GPU = True
+__C.PRINT_EVERY = 100
+__C.EVALUATE_EVERY = 5
 
 #GSCAN Specific
 __C.TRAIN.K = 0

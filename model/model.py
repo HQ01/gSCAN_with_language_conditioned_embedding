@@ -20,6 +20,7 @@ from .gnn import LGCNLayer
 from .config import cfg
 from .encoder import Encoder
 from .decoder import Decoder
+from model.cnn_model import ConvolutionalNet
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ device = th.device("cuda" if th.cuda.is_available() else "cpu")
 
 
 class GSCAN_model(nn.Module):
-    def __init__(self, pad_idx, target_eos_idx, input_vocab_size, target_vocab_size):
+    def __init__(self, pad_idx, target_eos_idx, input_vocab_size, target_vocab_size, is_baseline=False, multigpu=False):
         super().__init__()
 
         
@@ -41,11 +42,33 @@ class GSCAN_model(nn.Module):
 
         self.num_vocab = input_vocab_size
 
-
-
         self.encoder = Encoder(pad_idx, input_vocab_size)
-        self.lgcn = LGCNLayer()
-        self.decoder = Decoder(target_vocab_size, pad_idx)
+        self.decoder = None
+        # self.situation_encoder = None
+        self.lgcn = None
+        self.size_embedding = nn.Linear(4, 64)
+        self.shape_embedding = nn.Linear(3, 64)
+        self.yrgb_embedding = nn.Linear(4, 64)
+        self.agent_embedding = nn.Linear(5, 64) # skip the first bit
+        self.is_baseline = is_baseline
+        self.situation_encoder = ConvolutionalNet(num_channels=256,
+                                                  cnn_kernel_size=7,
+                                                  num_conv_channels=50,
+                                                  dropout_probability=0.1,
+                                                  is_baseline=is_baseline)
+        if is_baseline:
+            self.decoder = Decoder(target_vocab_size, pad_idx, visual_key_size=50 * 3)
+        else:
+            self.lgcn = LGCNLayer()
+            self.decoder = Decoder(target_vocab_size, pad_idx)
+
+        if multigpu:
+            raise Exception("Buggy implmentation!")
+            self.encoder = th.nn.DataParallel(self.encoder)
+            self.decoder = th.nn.DataParallel(self.decoder)
+            if self.lgcn is not None:
+                self.lgcn = th.nn.DataParallel(self.lgcn)
+            self.situation_encoder = th.nn.DataParallel(self.situation_encoder)
 
 
         self.loss_criterion = nn.NLLLoss(ignore_index = pad_idx)
@@ -63,21 +86,21 @@ class GSCAN_model(nn.Module):
 
         self.device = th.device("cuda" if th.cuda.is_available() else "cpu")
     
-    def nonzero_extractor(self, x):
+    def nonzero_extractor(self, x, cnn_out):
         lx = []
         for i in range(x.size(0)):
             sum_x = th.sum(x[i], dim=-1)
-            lx.append(x[i, sum_x.gt(0), :])
+            lx.append(cnn_out[i, sum_x.gt(0), :])
         return lx
 
     
     @staticmethod
-    def remove_start_of_sequence(input_tensor):
+    def remove_start_of_sequence(input_tensor, target_pad_idx = 0):
         """Get rid of SOS-tokens in targets batch and append a padding token to each example in the batch."""
+        # return input_tensor
         batch_size, max_time = input_tensor.size()
         input_tensor = input_tensor[:, 1:]
-        output_tensor = th.cat([input_tensor, th.zeros(batch_size, device=device, dtype=th.long).unsqueeze(
-            dim=1)], dim=1)
+        output_tensor = th.cat([input_tensor, th.zeros([batch_size, 1], device=device, dtype=th.long) + target_pad_idx], dim=1)
         return output_tensor
 
     
@@ -89,7 +112,7 @@ class GSCAN_model(nn.Module):
         :return: scalar float of accuracy averaged over sequence length and batch size.
         """
         with th.no_grad():
-            targets = self.remove_start_of_sequence(targets)
+            targets = self.remove_start_of_sequence(targets, target_pad_idx=self.target_pad_idx)
             mask = (targets != self.target_pad_idx).long()
             total = mask.sum().data.item()
             predicted_targets = target_scores.max(dim=2)[1]
@@ -103,10 +126,65 @@ class GSCAN_model(nn.Module):
             accuracy = 100. * match_targets_sum / total
         return accuracy, exact_match
 
-    
-    
+    def encode_input(self, cmd_batch, situation_batch):
+        batchSize = cmd_batch[0].size(0)
+        # print("batch size is ", batchSize)
+        cmdIndices, cmdLengths = cmd_batch[0], cmd_batch[1]
+        # tgtIndices, tgtLengths = tgt_batch[0], tgt_batch[1]
 
-    
+        # LSTM
+        cmd_out, cmd_h = self.encoder(cmdIndices, cmdLengths)
+
+        # convert situation to embedding
+        size = self.size_embedding(situation_batch[:, :, :, :4])
+        shape = self.shape_embedding(situation_batch[:, :, :, 4:7])
+        rgb = self.yrgb_embedding(situation_batch[:, :, :, 7:11])
+        agent = self.agent_embedding(situation_batch[:, :, :, 11:])
+        situation_batch = th.cat([size, shape, rgb, agent], dim=-1)
+
+        if self.is_baseline:
+            situation_out = self.situation_encoder(situation_batch)
+            batch_size, image_num_memory, _ = situation_out.size()
+            situations_lengths = [image_num_memory for _ in range(batch_size)]
+        else:
+            # Building computation graph for LGCN
+            cnn_out = self.situation_encoder(situation_batch)
+            # situations_lengths = [image_num_memory for _ in range(batch_size)]
+            xs = self.nonzero_extractor(situation_batch, cnn_out)
+            gs = []
+            situations_lengths = []
+            graph_membership = []
+            dgl_gs =[dgl.DGLGraph() for _ in range(batchSize)]
+            for i, x in enumerate(xs):
+                dgl_gs[i].add_nodes(x.size(0))
+                src_l, dst_l = [], []
+                for j in range(x.size(0)):
+                    for k in range(x.size(0)):
+                        if j != k:
+                            src_l.append(j)
+                            dst_l.append(k)
+                dgl_gs[i].add_edges(src_l, dst_l)
+
+                #gs.append(nx.complete_graph(x.size(0)).to_directed())
+                situations_lengths.append(x.size(0))
+                graph_membership += [i for _ in range(x.size(0))]
+            # for i in range(len(dgl_gs)):
+            #     #G.add_edges([0, 2], [1, 3])
+            #     dgl_gs[i].add_edges([[i, j] for j in range(len(dgl_gs))])
+            #     dgl_gs[i].from_networkx(gs[i])
+            batch_g = dgl.batch(dgl_gs)
+            situation_X = th.cat(xs, dim=0)
+            graph_membership = th.tensor(graph_membership, dtype=th.long, device=self.device)
+
+            #LGCN
+            situation_out = self.lgcn(situation_X, batch_g, cmd_h, cmd_out, cmdLengths, batchSize, graph_membership)
+            situation_out = th.nn.utils.rnn.pad_sequence(situation_out, batch_first=True)
+
+        return cmd_h, cmd_out, cmdLengths, situation_out, situations_lengths
+        # decoder_output, context_situation = self.decoder(tgtIndices, tgtLengths, initial_hidden=cmd_h, encoded_commands=cmd_out, commands_lengths=cmdLengths,
+        #                                                  encoded_situations=situation_out, situations_lengths=situations_lengths)
+
+
     def forward(self, cmd_batch, situation_batch, tgt_batch):
         '''
         cmd_batch[0]: batchsize x max_length
@@ -115,14 +193,14 @@ class GSCAN_model(nn.Module):
         
         '''
         batchSize = cmd_batch[0].size(0)
-        print("batch size is ", batchSize)
-        cmdIndices, cmdLengths = cmd_batch[0], cmd_batch[1]
+        # print("batch size is ", batchSize)
+        # cmdIndices, cmdLengths = cmd_batch[0], cmd_batch[1]
         tgtIndices, tgtLengths = tgt_batch[0], tgt_batch[1]
 
+        cmd_h, cmd_out, cmdLengths, situation_out, situations_lengths = self.encode_input(cmd_batch, situation_batch)
+        '''
         # LSTM
         cmd_out, cmd_h = self.encoder(cmdIndices, cmdLengths)
-        print("cmd_out size is ", cmd_out.size())
-        print("cmd_h size is ", cmd_h.size())
 
         # Building computation graph for LGCN
         xs = self.nonzero_extractor(situation_batch)
@@ -144,10 +222,11 @@ class GSCAN_model(nn.Module):
         #LGCN
         situation_out = self.lgcn(situation_X, batch_g, cmd_h, cmd_out, cmdLengths, batchSize, graph_membership)
         situation_out = th.nn.utils.rnn.pad_sequence(situation_out, batch_first=True)
+        '''
 
 
         #Decoder
-        decoder_output, context_situation = self.decoder(tgtIndices, tgtLengths, initial_hidden = cmd_h, encoded_commands=cmd_out, commands_lengths=cmdLengths,
+        decoder_output, context_situation = self.decoder(tgtIndices, tgtLengths, initial_hidden=cmd_h, encoded_commands=cmd_out, commands_lengths=cmdLengths,
         encoded_situations=situation_out, situations_lengths=situations_lengths)
 
 
@@ -160,7 +239,7 @@ class GSCAN_model(nn.Module):
     
 
     def get_loss(self, target_score, target):
-        target = self.remove_start_of_sequence(target) #\TODO make sure include sos in target
+        target = self.remove_start_of_sequence(target, target_pad_idx=self.target_pad_idx) #\TODO make sure include sos in target
 
         # Calculate the loss
         _, _, vocabulary_size = target_score.size()
@@ -190,8 +269,13 @@ class GSCAN_model(nn.Module):
         if is_best:
             best_path = os.path.join(self.output_directory, 'model_best.pth.tar')
             shutil.copyfile(path, best_path)
-        return path 
+        return path
 
+    def get_current_state(self):
+        return {'model_state_dict' : self.state_dict()}
 
-
+    def load_model(self, path):
+        d = th.load(path)
+        self.load_state_dict(d['model_state_dict'])
+        return d['optimizer_state_dict']
 

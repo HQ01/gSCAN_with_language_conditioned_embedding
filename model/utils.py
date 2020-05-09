@@ -8,6 +8,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
+from model.config import cfg
+
 logger = logging.getLogger(__name__)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -212,44 +214,58 @@ def predict(data_iterator: Iterator, model: nn.Module, max_decoding_steps: int, 
     i = 0
     for x in data_iterator:
         i += 1
-        if max_examples_to_evaluate and i > max_examples_to_evaluate: break
+        batchsize = x.input[0].shape[0]
+        if max_examples_to_evaluate and i * batchsize > max_examples_to_evaluate: break
 
-        encoded_input = model.encode_input(x.input, x.situation)
+        hidden, encoded_commands, \
+        command_lengths, encoded_situations, situations_lengths = model.encode_input(x.input, x.situation)
 
-        # For efficiency
-        projected_keys_visual = model.visual_attention.key_layer(
-            encoded_input["encoded_situations"])  # [bsz, situation_length, dec_hidden_dim]
-        projected_keys_textual = model.textual_attention.key_layer(
-            encoded_input["encoded_commands"]["encoder_outputs"])  # [max_input_length, bsz, dec_hidden_dim]
-        
-        output_sequence = []
+        projected_keys_visual = model.decoder.attentionDecoder.visual_attention.key_layer(
+            encoded_situations)  # [batch_size, situation_length, dec_hidden_dim]
+        projected_keys_textual = model.decoder.attentionDecoder.textual_attention.key_layer(
+            encoded_commands)  # [max_input_length, batch_size, dec_hidden_dim]
+
+        hidden = model.decoder.attentionDecoder.initialize_hidden(
+            model.decoder.tanh(model.decoder.enc_hidden_to_dec_hidden(hidden))
+        )
+
         contexts_situation = []
+        '''
         #\TODO: this initialize hidden state from encoder output.
         hidden = model.attention_decoder.initialize_hidden(
             model.tanh(model.enc_hidden_to_dec_hidden(encoded_input["hidden_states"])))
+        '''
 
-        token = torch.tensor([sos_idx], dtype=torch.long, device=device)
+        # token = torch.tensor([sos_idx], dtype=torch.long, device=device)
+        output_tokens = torch.zeros((batchsize, 1), dtype=torch.long, device=device) + sos_idx
         decoding_iteration = 0
         attention_weights_commands = []
         attention_weights_situations = []
 
-        while token != eos_idx and decoding_iteration <= max_decoding_steps:
+        # while token != eos_idx and decoding_iteration <= max_decoding_steps:
+        while decoding_iteration < max_decoding_steps:
             (output, hidden, context_situation, attention_weights_command,
-             attention_weights_situation) = model.decode_input(
-                target_token=token, hidden=hidden, encoder_outputs=projected_keys_textual,
-                input_lengths=x.input, encoded_situations=projected_keys_visual)
+             attention_weights_situation) = model.decoder.attentionDecoder.forward_step(
+                input_tokens=output_tokens[:, -1], last_hidden=hidden, encoded_commands=projected_keys_textual,
+                commands_lengths=command_lengths, encoded_situations=projected_keys_visual,
+                situations_lengths=situations_lengths)
             output = F.log_softmax(output, dim=-1)
             token = output.max(dim=-1)[1]
-            output_sequence.append(token.data[0].item())
+            output_tokens = torch.cat([output_tokens, token.unsqueeze(1)], dim=1)
+            # output_sequence.append(token.data[0].item())
             attention_weights_commands.append(attention_weights_command.tolist())
             attention_weights_situations.append(attention_weights_situation.tolist())
             contexts_situation.append(context_situation.unsqueeze(1))
             decoding_iteration += 1
 
-        if output_sequence[-1] == eos_idx:
-            output_sequence.pop()
-            attention_weights_commands.pop()
-            attention_weights_situations.pop()
+        # if output_sequence[-1] == eos_idx:
+        #     output_sequence.pop()
+        #     attention_weights_commands.pop()
+        #     attention_weights_situations.pop()
+
+        # for i in range(min(max_decoding_steps, x.target[1]) + 1):
+        #     target_sequence.append(x.target[0][0].data[0].item())
+        # target_sequence = target_sequence[1:]
 
         if model.auxiliary_task:
             target_position_scores = model.auxiliary_task_forward(torch.cat(contexts_situation, dim=1).sum(dim=1))
@@ -258,10 +274,10 @@ def predict(data_iterator: Iterator, model: nn.Module, max_decoding_steps: int, 
             auxiliary_accuracy_target = 0
             auxiliary_accuracy_agent = 0
             #\TODO we never even predict aux_acc_agent
-        yield (x, output_sequence, attention_weights_commands, attention_weights_situations, auxiliary_accuracy_target)
+        yield (x, output_tokens, x.target[0][:, :max_decoding_steps + 1], attention_weights_commands, attention_weights_situations, auxiliary_accuracy_target)
         # yield (input_sequence, derivation_spec, situation_spec, output_sequence, target_sequence,
         #        attention_weights_commands, attention_weights_situations, auxiliary_accuracy_target)
 
     elapsed_time = time.time() - start_time
-    logging.info("Predicted for {} examples.".format(i))
+    # logging.info("Predicted for {} examples.".format(i * bat))
     logging.info("Done predicting in {} seconds.".format(elapsed_time))

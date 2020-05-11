@@ -46,16 +46,18 @@ class GSCAN_model(nn.Module):
         self.decoder = None
         # self.situation_encoder = None
         self.lgcn = None
-        self.size_embedding = nn.Linear(4, 64)
-        self.shape_embedding = nn.Linear(3, 64)
-        self.yrgb_embedding = nn.Linear(4, 64)
-        self.agent_embedding = nn.Linear(5, 64) # skip the first bit
+        self.size_embedding = nn.Linear(4, 16) # 64
+        self.shape_embedding = nn.Linear(3, 16)
+        self.yrgb_embedding = nn.Linear(4, 16)
+        self.agent_embedding = nn.Linear(5, 16) # skip the first bit
         self.is_baseline = is_baseline
-        self.situation_encoder = ConvolutionalNet(num_channels=256,
+        # if CNN first then LGCN && embedding, num_channels = 256, num_conv_channels=50, SITU_D_FEAT = 150;
+        # if LGCN first then CNN && embedding, num_channels = cfg.SITU_D_CTX, num_conv_channels = 50, SITU_D_FEAT = 256
+        self.situation_encoder = ConvolutionalNet(num_channels=cfg.SITU_D_CTX,
                                                   cnn_kernel_size=7,
-                                                  num_conv_channels=50,
+                                                  num_conv_channels=cfg.SITU_D_CNN_OUTPUT,
                                                   dropout_probability=0.1,
-                                                  is_baseline=is_baseline)
+                                                  flatten_output=True)
         if is_baseline:
             self.decoder = Decoder(target_vocab_size, pad_idx, visual_key_size=50 * 3)
         else:
@@ -86,12 +88,27 @@ class GSCAN_model(nn.Module):
 
         self.device = th.device("cuda" if th.cuda.is_available() else "cpu")
     
-    def nonzero_extractor(self, x, cnn_out):
+    def nonzero_extractor(self, x, cnn_out=None, extract_mode = "base"):
         lx = []
         for i in range(x.size(0)):
             sum_x = th.sum(x[i], dim=-1)
-            lx.append(cnn_out[i, sum_x.gt(0), :])
+            if extract_mode == "base":
+                lx.append(x[i, sum_x.gt(0), :])
+            else:
+                lx.append(cnn_out[i, sum_x.gt(0), :])
         return lx
+
+    def nonzero_insertor(self, node_out, situation_batch):
+        padding_len = node_out[0].size()[-1] - situation_batch.size()[-1]
+        # assume B X H X W X K size for situation_batch
+        B, H, W, _ = situation_batch.size()
+        situation_paddng = th.zeros(B, H, W, padding_len).to(situation_batch.device)
+        situation_batch = th.cat((situation_batch, situation_paddng), dim=-1)
+        for i in range(situation_batch.size(0)):
+            sum_x = th.sum(situation_batch[i], dim=-1)
+            situation_batch[i, sum_x.gt(0), :] = node_out[i]
+
+        return situation_batch
 
     
     @staticmethod
@@ -142,19 +159,17 @@ class GSCAN_model(nn.Module):
         agent = self.agent_embedding(situation_batch[:, :, :, 11:])
         situation_batch = th.cat([size, shape, rgb, agent], dim=-1)
 
+
         if self.is_baseline:
             situation_out = self.situation_encoder(situation_batch)
             batch_size, image_num_memory, _ = situation_out.size()
             situations_lengths = [image_num_memory for _ in range(batch_size)]
         else:
-            # Building computation graph for LGCN
-            cnn_out = self.situation_encoder(situation_batch)
-            # situations_lengths = [image_num_memory for _ in range(batch_size)]
-            xs = self.nonzero_extractor(situation_batch, cnn_out)
+            # LGCN first, then CNN
+            xs = self.nonzero_extractor(situation_batch, None)
             gs = []
-            situations_lengths = []
             graph_membership = []
-            dgl_gs =[dgl.DGLGraph() for _ in range(batchSize)]
+            dgl_gs = [dgl.DGLGraph() for _ in range(batchSize)]
             for i, x in enumerate(xs):
                 dgl_gs[i].add_nodes(x.size(0))
                 src_l, dst_l = [], []
@@ -164,21 +179,54 @@ class GSCAN_model(nn.Module):
                             src_l.append(j)
                             dst_l.append(k)
                 dgl_gs[i].add_edges(src_l, dst_l)
-
-                #gs.append(nx.complete_graph(x.size(0)).to_directed())
-                situations_lengths.append(x.size(0))
                 graph_membership += [i for _ in range(x.size(0))]
-            # for i in range(len(dgl_gs)):
-            #     #G.add_edges([0, 2], [1, 3])
-            #     dgl_gs[i].add_edges([[i, j] for j in range(len(dgl_gs))])
-            #     dgl_gs[i].from_networkx(gs[i])
             batch_g = dgl.batch(dgl_gs)
             situation_X = th.cat(xs, dim=0)
             graph_membership = th.tensor(graph_membership, dtype=th.long, device=self.device)
 
-            #LGCN
-            situation_out = self.lgcn(situation_X, batch_g, cmd_h, cmd_out, cmdLengths, batchSize, graph_membership)
-            situation_out = th.nn.utils.rnn.pad_sequence(situation_out, batch_first=True)
+
+            # LGCN
+            situation_out_node = self.lgcn(situation_X, batch_g, cmd_h, cmd_out, cmdLengths, batchSize, graph_membership)
+            situation_batch = self.nonzero_insertor(situation_out_node, situation_batch)
+            situation_out = self.situation_encoder(situation_batch)
+            batch_size, image_num_memory, _ = situation_out.size()
+            situations_lengths = [image_num_memory for _ in range(batch_size)]
+
+        # else:
+        #     CNN first, then LGCN
+        #
+        #     # Building computation graph for LGCN
+        #     cnn_out = self.situation_encoder(situation_batch)
+        #     # situations_lengths = [image_num_memory for _ in range(batch_size)]
+        #     xs = self.nonzero_extractor(situation_batch, cnn_out, extract_mode="cnn")
+        #     gs = []
+        #     situations_lengths = []
+        #     graph_membership = []
+        #     dgl_gs =[dgl.DGLGraph() for _ in range(batchSize)]
+        #     for i, x in enumerate(xs):
+        #         dgl_gs[i].add_nodes(x.size(0))
+        #         src_l, dst_l = [], []
+        #         for j in range(x.size(0)):
+        #             for k in range(x.size(0)):
+        #                 if j != k:
+        #                     src_l.append(j)
+        #                     dst_l.append(k)
+        #         dgl_gs[i].add_edges(src_l, dst_l)
+        #
+        #         #gs.append(nx.complete_graph(x.size(0)).to_directed())
+        #         situations_lengths.append(x.size(0))
+        #         graph_membership += [i for _ in range(x.size(0))]
+        #     # for i in range(len(dgl_gs)):
+        #     #     #G.add_edges([0, 2], [1, 3])
+        #     #     dgl_gs[i].add_edges([[i, j] for j in range(len(dgl_gs))])
+        #     #     dgl_gs[i].from_networkx(gs[i])
+        #     batch_g = dgl.batch(dgl_gs)
+        #     situation_X = th.cat(xs, dim=0)
+        #     graph_membership = th.tensor(graph_membership, dtype=th.long, device=self.device)
+        #
+        #     #LGCN
+        #     situation_out = self.lgcn(situation_X, batch_g, cmd_h, cmd_out, cmdLengths, batchSize, graph_membership)
+        #     situation_out = th.nn.utils.rnn.pad_sequence(situation_out, batch_first=True)
 
         return cmd_h, cmd_out, cmdLengths, situation_out, situations_lengths
         # decoder_output, context_situation = self.decoder(tgtIndices, tgtLengths, initial_hidden=cmd_h, encoded_commands=cmd_out, commands_lengths=cmdLengths,

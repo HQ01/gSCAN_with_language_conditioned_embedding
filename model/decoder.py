@@ -248,9 +248,10 @@ class BahdanauAttentionDecoderRNN(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, target_vocab_size, target_pad_idx, visual_key_size=cfg.SITU_D_CTX,\
+    def __init__(self, target_vocab_size, target_pad_idx, visual_key_size=cfg.SITU_D_CNN_OUTPUT*3,\
             visual_query_size=cfg.DEC_D_H, visual_hidden_size=cfg.DEC_D_H): #\TODO: does target vocab size include special tokens?
         super().__init__()
+        # if CNN then LGCN: visual_key_size = cfg.SITU_D_CTX
         self.visual_attention = Attention(key_size = visual_key_size,\
             query_size=visual_query_size, hidden_size=visual_hidden_size)
         self.textual_attention = Attention(key_size = cfg.CMD_D_H, query_size=cfg.DEC_D_H, hidden_size=cfg.DEC_D_H)

@@ -31,8 +31,8 @@ cfg = __C
 # general options
 # --------------------------------------------------------------------------- #
 ##OS options
-# __C.DATA_DIRECTORY = "data/parsed_dataset"
-__C.DATA_DIRECTORY = "data/sampled_parsed_dataset"
+__C.DATA_DIRECTORY = "/root/cse395t_project/data/parsed_dataset"
+# __C.DATA_DIRECTORY = "/root/cse395t_project/data/sampled_parsed_dataset"
 # __C.DATA_DIRECTORY = "data/sampled_dataset"
 __C.OUTPUT_DIRECTORY = "output"
 #__C.RESUME_FROM_FILE = "output/model_best.pth.tar"
@@ -61,12 +61,13 @@ __C.CMD_D_H = 256 # Same as ENC_DIM
 
 ## Situation Encoder (LGCN)
 # __C.SITU_D_FEAT = 16
-__C.SITU_D_FEAT = 150
-__C.SITU_D_CTX = 256 # 512
+__C.SITU_D_FEAT = 64 # 3 * D_CNN_OUTPUT if CNN then LGCN
+__C.SITU_D_CTX = 128 # 512
 __C.SITU_D_CMD = 256 # 512
+__C.SITU_D_CNN_OUTPUT = 256
 #1
 
-## Deoder
+## Decoder
 __C.DEC_D_H = 256
 __C.DEC_NUM_LAYER = 1
 __C.DEC_CONDITIONAL_ATTENTION = True
@@ -127,7 +128,8 @@ __C.AUXILIARY_TASK = False
 # training options
 # --------------------------------------------------------------------------- #
 __C.TRAIN = AttrDict()
-__C.TRAIN.BATCH_SIZE = 1024
+__C.TRAIN.BATCH_SIZE = 64
+__C.VAL_BATCH_SIZE = 512
 __C.TRAIN.START_EPOCH = 0
 
 __C.TRAIN.CLIP_GRADIENTS = True
@@ -136,7 +138,7 @@ __C.TRAIN.GRAD_MAX_NORM = 8.
 __C.TRAIN.SOLVER = AttrDict()
 # __C.TRAIN.SOLVER.LR = 3e-4
 __C.TRAIN.SOLVER.LR = 1e-3
-__C.TRAIN.SOLVER.LR_DECAY = 1.
+__C.TRAIN.SOLVER.LR_DECAY = 0.9
 __C.TRAIN.SOLVER.ADAM_BETA1 = 0.9
 __C.TRAIN.SOLVER.ADAM_BETA2 = 0.999
 __C.TRAIN.SOLVER.LR_DECAY_STEP = 20000
@@ -144,7 +146,9 @@ __C.TRAIN.MAX_EPOCH = 1000
 __C.TRAIN.RUN_EVAL = True
 __C.TRAIN.USE_MULTI_GPU = True
 __C.PRINT_EVERY = 100
-__C.EVALUATE_EVERY = 5
+__C.EVALUATE_EVERY = 1
+__C.SAVE_EVERY = 7
+__C.MODEL_NAME = "May10_batch64_LGCN_CNN_DECAY"
 
 #GSCAN Specific
 __C.TRAIN.K = 0

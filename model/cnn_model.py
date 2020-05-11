@@ -5,7 +5,7 @@ import torch.nn as nn
 class ConvolutionalNet(nn.Module):
     """Simple conv. net. Convolves the input channels but retains input image width."""
     def __init__(self, num_channels: int, cnn_kernel_size: int, num_conv_channels: int, dropout_probability: float,
-                 stride=1, is_baseline=False):
+                 stride=1, flatten_output=False):
         super(ConvolutionalNet, self).__init__()
         self.conv_1 = nn.Conv2d(in_channels=num_channels, out_channels=num_conv_channels, kernel_size=1,
                                 padding=0, stride=stride)
@@ -18,7 +18,7 @@ class ConvolutionalNet(nn.Module):
         layers = [self.relu, self.dropout]
         self.layers = nn.Sequential(*layers)
         self.output_dimension = num_conv_channels * 3
-        self.is_baseline = is_baseline
+        self.flatten_output = flatten_output
 
     def forward(self, input_images: torch.Tensor) -> torch.Tensor:
         """
@@ -34,7 +34,7 @@ class ConvolutionalNet(nn.Module):
         _, num_channels, _, image_dimension = images_features.size()
         images_features = images_features.transpose(1, 3)
         images_features = self.layers(images_features)
-        if self.is_baseline:
+        if self.flatten_output:
             return images_features.reshape(batch_size, image_dimension * image_dimension, num_channels)
         return images_features.reshape(batch_size, image_dimension, image_dimension, num_channels)
 

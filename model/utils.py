@@ -243,7 +243,8 @@ def predict(data_iterator: Iterator, model: nn.Module, max_decoding_steps: int, 
         attention_weights_situations = []
 
         # while token != eos_idx and decoding_iteration <= max_decoding_steps:
-        while decoding_iteration < max_decoding_steps:
+        real_decoding_steps = min(max_decoding_steps, x.target[0].shape[1] - 1)
+        while decoding_iteration < real_decoding_steps:
             (output, hidden, context_situation, attention_weights_command,
              attention_weights_situation) = model.decoder.attentionDecoder.forward_step(
                 input_tokens=output_tokens[:, -1], last_hidden=hidden, encoded_commands=projected_keys_textual,
@@ -274,7 +275,7 @@ def predict(data_iterator: Iterator, model: nn.Module, max_decoding_steps: int, 
             auxiliary_accuracy_target = 0
             auxiliary_accuracy_agent = 0
             #\TODO we never even predict aux_acc_agent
-        yield (x, output_tokens, x.target[0][:, :max_decoding_steps + 1], attention_weights_commands, attention_weights_situations, auxiliary_accuracy_target)
+        yield (x, output_tokens, x.target[0][:, :real_decoding_steps + 1], attention_weights_commands, attention_weights_situations, auxiliary_accuracy_target)
         # yield (input_sequence, derivation_spec, situation_spec, output_sequence, target_sequence,
         #        attention_weights_commands, attention_weights_situations, auxiliary_accuracy_target)
 

@@ -41,12 +41,13 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
     device = torch.device(type='cuda') if use_cuda else torch.device(type='cpu')
 
     logger.info("Loading Training set...")
+    logger.info(cfg.MODEL_NAME)
     train_iter, train_input_vocab, train_target_vocab = dataloader(train_data_path,
                                                                    batch_size=cfg.TRAIN.BATCH_SIZE,
                                                                    use_cuda=use_cuda)  # \TODO add k and statistics and shuffling
     val_iters = {}
     for split_name, path in val_data_paths.items():
-        val_iters[split_name], _, _ = dataloader(path, batch_size=cfg.TRAIN.BATCH_SIZE, use_cuda=use_cuda,
+        val_iters[split_name], _, _ = dataloader(path, batch_size=cfg.VAL_BATCH_SIZE, use_cuda=use_cuda,
                                 input_vocab=train_input_vocab, target_vocab=train_target_vocab)
 
     pad_idx, sos_idx, eos_idx = train_target_vocab.stoi['<pad>'], train_target_vocab.stoi['<sos>'], \
@@ -173,6 +174,47 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
 
             num_batch += 1
 
+            #test code
+            # with torch.no_grad():
+            #     model.eval()
+            #     logger.info("Evaluating..")
+            #     # accuracy, exact_match, target_accuracy = evaluate()
+            #     test_exact_match = 0
+            #     test_accuracy = 0
+            #     print(val_iters)
+            #     for split_name, val_iter in val_iters.items():
+            #         accuracy, exact_match, target_accuracy = evaluate(
+            #             val_iter, model=model,
+            #             max_decoding_steps=30, pad_idx=pad_idx,
+            #             sos_idx=sos_idx,
+            #             eos_idx=eos_idx,
+            #             max_examples_to_evaluate=None)
+            #         if split_name == 'test':
+            #             test_exact_match = exact_match
+            #             test_accuracy = accuracy
+            #
+            #         logger.info(" %s Accuracy: %5.2f Exact Match: %5.2f "
+            #                     " Target Accuracy: %5.2f " % (split_name, accuracy, exact_match, target_accuracy))
+            #     # try:
+            #     #     print(val_iters)
+            #     #     for split_name, val_iter in val_iters.items():
+            #     #         accuracy, exact_match, target_accuracy = evaluate(
+            #     #             val_iter, model=model,
+            #     #             max_decoding_steps=30, pad_idx=pad_idx,
+            #     #             sos_idx=sos_idx,
+            #     #             eos_idx=eos_idx,
+            #     #             max_examples_to_evaluate=None)
+            #     #         if split_name == 'test':
+            #     #             test_exact_match = exact_match
+            #     #             test_accuracy = accuracy
+            #     #
+            #     #         logger.info(" %s Accuracy: %5.2f Exact Match: %5.2f "
+            #     #                     " Target Accuracy: %5.2f " % (split_name, accuracy, exact_match, target_accuracy))
+            #     # except:
+            #     #     print("Exception!")
+            #
+            #     print("reach here")
+
         if training_iteration % cfg.EVALUATE_EVERY == 0:  # \TODO add evaluation
             with torch.no_grad():
                 model.eval()
@@ -188,7 +230,7 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
                             sos_idx=sos_idx,
                             eos_idx=eos_idx,
                             max_examples_to_evaluate=None)
-                        if split_name == 'test':
+                        if split_name == 'dev':
                             test_exact_match = exact_match
                             test_accuracy = accuracy
 
@@ -202,10 +244,16 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
                     best_accuracy = test_accuracy
                     best_exact_match = test_exact_match
                     model.update_state(accuracy=test_accuracy, exact_match=test_exact_match, is_best=is_best)
-                file_name = "checkpoint.{}th.tar".format(str(training_iteration))
+                file_name = cfg.MODEL_NAME + "checkpoint.{}th.tar".format(str(training_iteration))
                 if is_best:
+                    logger.info("saving best model...")
                     model.save_checkpoint(file_name=file_name, is_best=is_best,
                                           optimizer_state_dict=optimizer.state_dict())
+
+        if training_iteration % cfg.SAVE_EVERY == 0:
+            logger.info("forcing to save model every several epochs...")
+            file_name =  cfg.MODEL_NAME + " checkpoint_force.{}th.tar".format(str(training_iteration))
+            model.save_checkpoint(file_name=file_name, is_best=False, optimizer_state_dict = optimizer.state_dict())
 
         training_iteration += 1  # warning: iteratin represents epochs here
     logger.info("Finished training.")
@@ -232,7 +280,8 @@ def main(flags, use_cuda):
         'situational_2',
         'test',
         'visual',
-        'visual_easier'
+        'visual_easier',
+        'dev'
     ]
     val_data_paths = {split_name: os.path.join(cfg.DATA_DIRECTORY, split_name + '.json') for split_name in test_splits}  # \TODO val dataset not exist
 

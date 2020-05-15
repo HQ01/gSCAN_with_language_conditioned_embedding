@@ -10,32 +10,6 @@ from model.utils import *
 
 
 
-# import models
-def evaluate(data_iterator, model, max_decoding_steps, pad_idx, sos_idx, eos_idx, max_examples_to_evaluate=None):  # \TODO evaluate function might be broken now. This is Ruis' code.
-    target_accuracies = []
-    exact_match = 0
-    num_examples = 0
-    correct_terms = 0
-    total_terms = 0
-    for input_sequence, output_sequence, target_sequence, _, _, aux_acc_target in predict(
-            data_iterator=data_iterator, model=model, max_decoding_steps=max_decoding_steps, pad_idx=pad_idx,
-            sos_idx=sos_idx, eos_idx=eos_idx, max_examples_to_evaluate=max_examples_to_evaluate):
-        # accuracy = sequence_accuracy(output_sequence, target_sequence[0].tolist()[1:-1])
-        # accuracy = sequence_accuracy(output_sequence, target_sequence)
-        num_examples += output_sequence.shape[0]
-        seq_eq = torch.eq(output_sequence, target_sequence)
-        mask = torch.eq(target_sequence, pad_idx) + torch.eq(target_sequence, sos_idx)
-               # torch.eq(target_sequence, eos_idx)
-        seq_eq.masked_fill_(mask, 0)
-        total = (~mask).sum(-1).float()
-        accuracy = seq_eq.sum(-1) / total
-        total_terms += total.sum().data.item()
-        correct_terms += seq_eq.sum().data.item()
-        exact_match += accuracy.eq(1.).sum().data.item()
-        target_accuracies.append(aux_acc_target)
-    return (float(correct_terms) / total_terms) * 100, (exact_match / num_examples) * 100, \
-            float(np.mean(np.array(target_accuracies))) * 100
-
 
 def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
     device = torch.device(type='cuda') if use_cuda else torch.device(type='cpu')

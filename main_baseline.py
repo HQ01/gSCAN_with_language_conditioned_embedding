@@ -9,7 +9,7 @@ from model.model import GSCAN_model
 from model.utils import *
 
 
-
+'''
 # import models
 def evaluate(data_iterator, model, max_decoding_steps, pad_idx, sos_idx, eos_idx, max_examples_to_evaluate=None):  # \TODO evaluate function might be broken now. This is Ruis' code.
     target_accuracies = []
@@ -36,6 +36,7 @@ def evaluate(data_iterator, model, max_decoding_steps, pad_idx, sos_idx, eos_idx
     return (float(correct_terms) / total_terms) * 100, (exact_match / num_examples) * 100, \
             float(np.mean(np.array(target_accuracies))) * 100
 
+'''
 
 def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
     device = torch.device(type='cuda') if use_cuda else torch.device(type='cpu')

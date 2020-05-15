@@ -32,10 +32,10 @@ cfg = __C
 # --------------------------------------------------------------------------- #
 ##OS options
 __C.DATA_DIRECTORY = "/root/cse395t_project/data/parsed_dataset"
-# __C.DATA_DIRECTORY = "/root/cse395t_project/data/sampled_parsed_dataset"
+#__C.DATA_DIRECTORY = "/root/cse395t_project/data/sampled_parsed_dataset"
 # __C.DATA_DIRECTORY = "data/sampled_dataset"
-__C.OUTPUT_DIRECTORY = "output"
-#__C.RESUME_FROM_FILE = "output/model_best.pth.tar"
+__C.OUTPUT_DIRECTORY = "output_bl1"
+#__C.RESUME_FROM_FILE = "output_model/model_best.pth.tar"
 __C.RESUME_FROM_FILE = ""
 __C.EXP_NAME = '<fill-with-filename>'
 __C.OUTPUT_FILE_NAME = "predict.json"
@@ -147,8 +147,8 @@ __C.TRAIN.RUN_EVAL = True
 __C.TRAIN.USE_MULTI_GPU = True
 __C.PRINT_EVERY = 100
 __C.EVALUATE_EVERY = 1
-__C.SAVE_EVERY = 7
-__C.MODEL_NAME = "May10_batch64_LGCN_CNN_DECAY"
+__C.SAVE_EVERY = 100
+__C.MODEL_NAME = "May12_batch64_model_decay_run4"
 
 #GSCAN Specific
 __C.TRAIN.K = 0

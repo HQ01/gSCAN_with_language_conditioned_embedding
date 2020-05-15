@@ -53,14 +53,20 @@ class GSCAN_model(nn.Module):
         self.is_baseline = is_baseline
         # if CNN first then LGCN && embedding, num_channels = 256, num_conv_channels=50, SITU_D_FEAT = 150;
         # if LGCN first then CNN && embedding, num_channels = cfg.SITU_D_CTX, num_conv_channels = 50, SITU_D_FEAT = 256
-        self.situation_encoder = ConvolutionalNet(num_channels=cfg.SITU_D_CTX,
-                                                  cnn_kernel_size=7,
-                                                  num_conv_channels=cfg.SITU_D_CNN_OUTPUT,
-                                                  dropout_probability=0.1,
-                                                  flatten_output=True)
+        self.situation_encoder = None
         if is_baseline:
+            self.situation_encoder = ConvolutionalNet(num_channels=64,
+                                                      cnn_kernel_size=7,
+                                                      num_conv_channels=50,
+                                                      dropout_probability=0.1,
+                                                      flatten_output=True)
             self.decoder = Decoder(target_vocab_size, pad_idx, visual_key_size=50 * 3)
         else:
+            self.situation_encoder = ConvolutionalNet(num_channels=cfg.SITU_D_CTX,
+                                                      cnn_kernel_size=7,
+                                                      num_conv_channels=cfg.SITU_D_CNN_OUTPUT,
+                                                      dropout_probability=0.1,
+                                                      flatten_output=True)
             self.lgcn = LGCNLayer()
             self.decoder = Decoder(target_vocab_size, pad_idx)
 

@@ -1,5 +1,6 @@
 import argparse
 import os
+import pickle
 
 from torch.optim.lr_scheduler import LambdaLR
 
@@ -7,9 +8,10 @@ from dataloader import dataloader
 from model.config import cfg
 from model.model import GSCAN_model
 from model.utils import *
+from GroundedScan.dataset import GroundedScan
 
 model_file = "output_model/model_best.pth.tar"
-baseline_file = "output_model/model_best.pth.tar"
+baseline_file = "output/model_best.pth.tar"
 
 def exact_match_indicator(data_iterator, model, max_decoding_steps, pad_idx, sos_idx, eos_idx,
                 max_examples_to_evaluate=None):  # \TODO evaluate function might be broken now. This is Ruis' code.
@@ -23,44 +25,54 @@ def exact_match_indicator(data_iterator, model, max_decoding_steps, pad_idx, sos
             seq_eq.masked_fill_(mask, 0)
             total = (~mask).sum(-1).float()
             accuracy = seq_eq.sum(-1) / total
-            exact_match_terms.append(accuracy.eq(1.).data.numpy())
+            exact_match_terms.append(accuracy.eq(1.))
     return torch.cat(exact_match_terms, dim=0)
 
-def predict_and_write(data_iterator, model, example_indicator, max_decoding_steps, vocab,
-                      max_examples_to_evaluate=None, out='predict.json'):
+def predict_and_write(data_iterator, model, example_indicator, max_decoding_steps, input_vocab, target_vocab,
+                      max_examples_to_output=None, original_dataset=None, out='predict.json', split_name=None):
     # example_indicator: [datasetsize,] bool tensor indicating which example should be saved
     indicator_idx = 0
-    pad_idx, sos_idx, eos_idx = vocab.stoi['<pad>'], vocab.stoi['<sos>'], \
-                                vocab.stoi['<eos>']
+    pad_idx, sos_idx, eos_idx = target_vocab.stoi['<pad>'], target_vocab.stoi['<sos>'], \
+                                target_vocab.stoi['<eos>']
     predict_output = []
+    accu_ex_sum = 0
     with torch.no_grad():
-        for batch, output_sequence, target_sequence, attention_weights_commands, attention_weights_situations, \
+        for batch, output_sequence, target_sequence, _, attention_weights_situations, \
             aux_acc_target in predict(data_iterator=data_iterator, model=model, max_decoding_steps=max_decoding_steps,
                                       pad_idx=pad_idx, sos_idx=sos_idx, eos_idx=eos_idx,
-                                      max_examples_to_evaluate=max_examples_to_evaluate):
+                                      max_examples_to_evaluate=None):
             # output_sequence: bs x max_decoding_steps
             batchsize = batch.situation.shape[0]
             batch_indicator = example_indicator[indicator_idx:indicator_idx+batchsize]
-            indicator_idx += batchsize
+            situation_idx_offsets = batch_indicator.nonzero()
             if batch_indicator.sum() == 0:
                 continue
-            select_and_convert = lambda x: torch.masked_select(x, batch_indicator).cpu().numpy().astype(int)
+            select_and_convert = lambda x: x[batch_indicator].cpu().numpy().astype(int)
 
-            selected_input = select_and_convert(batch.input)
-            input_tokens = translate_sequence(selected_input, vocab.itos, eos_idx)
+            selected_input = select_and_convert(batch.input[0])
+            input_tokens = translate_sequence(selected_input, input_vocab.itos, eos_idx=input_vocab.stoi['<eos>'])
 
-            selected_output = select_and_convert(output_sequence)
-            output_tokens = translate_sequence(selected_output, vocab.itos, eos_idx)
+            selected_output = select_and_convert(output_sequence[:, 1:])
+            output_tokens = translate_sequence(selected_output, target_vocab.itos, eos_idx=target_vocab.stoi['<eos>'])
 
-            selected_target = select_and_convert(target_sequence)
-            target_tokens = translate_sequence(selected_target, vocab.itos, eos_idx)
+            selected_target = select_and_convert(target_sequence[:, 1:])
+            target_tokens = translate_sequence(selected_target, target_vocab.itos, eos_idx=target_vocab.stoi['<eos>'])
 
-            selected_situation = select_and_convert(batch.situation).tolist()
+            selected_attn_sit = np.array(attention_weights_situations)[:, batch_indicator.cpu().numpy(), :]
 
-            predict_output.append({"input": input_tokens, "prediction": output_tokens,
-                           "target": target_tokens, "situation": selected_situation,
-                           "attention_weights_input": attention_weights_commands,
-                           "attention_weights_situation": attention_weights_situations})
+            # selected_situation = select_and_convert(batch.situation).tolist()
+            for i in range(len(selected_input)):
+                situation_idx = indicator_idx + situation_idx_offsets[i]
+                predict_output.append({"input": input_tokens[i], "prediction": output_tokens[i],
+                                       "target": target_tokens[i], "situation":
+                                           original_dataset._data_pairs[split_name][situation_idx]['situation'],
+                                       "attention_weights_situation": selected_attn_sit[:, i:i+1, :].tolist()})
+            if max_examples_to_output is not None:
+                accu_ex_sum += batch_indicator.sum()
+                if accu_ex_sum > max_examples_to_output:
+                    break
+            indicator_idx += batchsize
+
     with open(out, 'w') as f:
         json.dump(predict_output, f)
 
@@ -97,9 +109,11 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
 
     logger.info("Loading Training set...")
     logger.info(cfg.MODEL_NAME)
-    train_iter, train_input_vocab, train_target_vocab = dataloader(train_data_path,
-                                                                   batch_size=cfg.TRAIN.BATCH_SIZE,
-                                                                   use_cuda=use_cuda)  # \TODO add k and statistics and shuffling
+    # train_iter, train_input_vocab, train_target_vocab = dataloader(train_data_path,
+    #                                                                batch_size=cfg.TRAIN.BATCH_SIZE,
+    #                                                                use_cuda=use_cuda)  # \TODO add k and statistics and shuffling
+    train_input_vocab, train_target_vocab = pickle.load(open('input_vocab.dict','rb')), \
+                                            pickle.load(open('target_vocab.dict','rb'))
     val_iters = {}
     for split_name, path in val_data_paths.items():
         val_iters[split_name], _, _ = dataloader(path, batch_size=cfg.VAL_BATCH_SIZE, use_cuda=use_cuda,
@@ -128,6 +142,11 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
     logger.info("Loading model checkpoint from file at '{}'".format(baseline_file))
     _ = baseline.load_model(baseline_file)
 
+    # laod the stupid Dataset
+    original_dataset = GroundedScan.load_dataset_from_file("/root/multimodal_seq2seq_gSCAN/data/compositional_splits/dataset.txt",
+                                                            save_directory="stat/", k=10)
+    # original_dataset=None
+
     with torch.no_grad():
         model.eval()
         logger.info("Evaluating..")
@@ -139,15 +158,20 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
                 sos_idx=sos_idx,
                 eos_idx=eos_idx,
                 max_examples_to_evaluate=None)
-            baseline_exact_match = exact_match_indicator(
-                val_iter, model=baseline,
-                max_decoding_steps=30, pad_idx=pad_idx,
-                sos_idx=sos_idx,
-                eos_idx=eos_idx,
-                max_examples_to_evaluate=None)
-            model_diff = torch.bitwise_xor(model_exact_match, baseline_exact_match)
-            model_better_exs = torch.bitwise_and(model_diff, model_exact_match)
-            predict_and_write(val_iter, baseline, model_better_exs, 30, train_input_vocab, out=split_name + '_predict.json')
+            # baseline_exact_match = exact_match_indicator(
+            #     val_iter, model=baseline,
+            #     max_decoding_steps=30, pad_idx=pad_idx,
+            #     sos_idx=sos_idx,
+            #     eos_idx=eos_idx,
+            #     max_examples_to_evaluate=None)
+            # model_diff = torch.bitwise_xor(model_exact_match, baseline_exact_match)
+            # model_better_exs = torch.bitwise_and(model_diff, model_exact_match)
+            # predict_and_write(val_iter, model, model_exact_match, 30, input_vocab=train_input_vocab,
+            #                   target_vocab=train_target_vocab, out='model_good/'+split_name + '_predict.json',
+            #                   split_name=split_name, original_dataset=original_dataset)
+            predict_and_write(val_iter, model, ~model_exact_match, 30, input_vocab=train_input_vocab,
+                              target_vocab=train_target_vocab, out='model_bad/'+split_name + '_predict.json',
+                              split_name=split_name, original_dataset=original_dataset, max_examples_to_output=200)
 
 
 
@@ -161,15 +185,14 @@ def main(flags, use_cuda):
 
     test_splits = [
         'situational_1',
-        'situational_2',
-        'test',
-        'visual',
-        'visual_easier',
-        'dev',
-        'adverb_1',
-        'adverb_2',
-        'contextual',
+        # 'situational_2',
+        # 'visual',
+        # 'visual_easier',
+        # 'adverb_1',
+        # 'adverb_2',
+        # 'contextual',
     ]
+    # test_splits = ['dev']
     val_data_paths = {split_name: os.path.join(cfg.DATA_DIRECTORY, split_name + '.json') for split_name in test_splits}  # \TODO val dataset not exist
 
     if cfg.MODE == "train":

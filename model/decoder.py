@@ -149,10 +149,15 @@ class BahdanauAttentionDecoderRNN(nn.Module):
         # output = output.squeeze(dim=0)
 
         # Concatenate all outputs and project to output size.
+        # TODO: what does pre_output do here??
+        '''
         pre_output = torch.cat([embedded_input, lstm_output,
                                 context_command.transpose(0, 1), context_situation.transpose(0, 1)], dim=2)
         pre_output = self.output_to_hidden(pre_output)  # [1, batch_size, hidden_size]
         output = self.hidden_to_output(pre_output)  # [batch_size, output_size]
+        '''
+
+        output = self.hidden_to_output(lstm_output)
         output = output.squeeze(dim=0)   # [batch_size, output_size]
 
         return (output, hidden, attention_weights_situations.squeeze(dim=1), attention_weights_commands,

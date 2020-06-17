@@ -31,10 +31,11 @@ cfg = __C
 # general options
 # --------------------------------------------------------------------------- #
 ##OS options
-__C.DATA_DIRECTORY = "/root/cse395t_project/data/parsed_dataset"
+__C.DATA_DIRECTORY = "/root/cs395t_project/data/parsed_dataset"
 #__C.DATA_DIRECTORY = "/root/cse395t_project/data/sampled_parsed_dataset"
 # __C.DATA_DIRECTORY = "data/sampled_dataset"
-__C.OUTPUT_DIRECTORY = "output_bl1"
+__C.OUTPUT_DIRECTORY = "output_lstm2"
+__C.MODEL_NAME = "June16_lstm2"
 #__C.RESUME_FROM_FILE = "output_model/model_best.pth.tar"
 __C.RESUME_FROM_FILE = ""
 __C.EXP_NAME = '<fill-with-filename>'
@@ -148,7 +149,6 @@ __C.TRAIN.USE_MULTI_GPU = True
 __C.PRINT_EVERY = 100
 __C.EVALUATE_EVERY = 1
 __C.SAVE_EVERY = 100
-__C.MODEL_NAME = "May12_batch64_model_decay_run4"
 
 #GSCAN Specific
 __C.TRAIN.K = 0

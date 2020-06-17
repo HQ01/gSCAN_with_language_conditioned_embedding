@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 
 from torch.optim.lr_scheduler import LambdaLR
 
@@ -9,40 +10,12 @@ from model.model import GSCAN_model
 from model.utils import *
 
 
-'''
-# import models
-def evaluate(data_iterator, model, max_decoding_steps, pad_idx, sos_idx, eos_idx, max_examples_to_evaluate=None):  # \TODO evaluate function might be broken now. This is Ruis' code.
-    target_accuracies = []
-    exact_match = 0
-    num_examples = 0
-    correct_terms = 0
-    total_terms = 0
-    for input_sequence, output_sequence, target_sequence, _, _, aux_acc_target in predict(
-            data_iterator=data_iterator, model=model, max_decoding_steps=max_decoding_steps, pad_idx=pad_idx,
-            sos_idx=sos_idx, eos_idx=eos_idx, max_examples_to_evaluate=max_examples_to_evaluate):
-        # accuracy = sequence_accuracy(output_sequence, target_sequence[0].tolist()[1:-1])
-        # accuracy = sequence_accuracy(output_sequence, target_sequence)
-        num_examples += output_sequence.shape[0]
-        seq_eq = torch.eq(output_sequence, target_sequence)
-        mask = torch.eq(target_sequence, pad_idx) + torch.eq(target_sequence, sos_idx)
-               # torch.eq(target_sequence, eos_idx)
-        seq_eq.masked_fill_(mask, 0)
-        total = (~mask).sum(-1).float()
-        accuracy = seq_eq.sum(-1) / total
-        total_terms += total.sum().data.item()
-        correct_terms += seq_eq.sum().data.item()
-        exact_match += accuracy.eq(1.).sum().data.item()
-        target_accuracies.append(aux_acc_target)
-    return (float(correct_terms) / total_terms) * 100, (exact_match / num_examples) * 100, \
-            float(np.mean(np.array(target_accuracies))) * 100
 
-'''
 
-def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
-    device = torch.device(type='cuda') if use_cuda else torch.device(type='cpu')
+def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name: str):
 
     logger.info("Loading Training set...")
-    logger.info(cfg.MODEL_NAME)
+    logger.info(model_name)
     train_iter, train_input_vocab, train_target_vocab = dataloader(train_data_path,
                                                                    batch_size=cfg.TRAIN.BATCH_SIZE,
                                                                    use_cuda=use_cuda)  # \TODO add k and statistics and shuffling
@@ -84,7 +57,7 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
 
     logger.info("Loading Dev. set...")
 
-    val_input_vocab_size, val_target_vocab_size = train_input_vocab_size, train_target_vocab_size
+    # val_input_vocab_size, val_target_vocab_size = train_input_vocab_size, train_target_vocab_size
 
     # Shuffle the test set to make sure that if we only evaluate max_testing_examples we get a random part of the set.
 
@@ -245,7 +218,8 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
                     best_accuracy = test_accuracy
                     best_exact_match = test_exact_match
                     model.update_state(accuracy=test_accuracy, exact_match=test_exact_match, is_best=is_best)
-                file_name = cfg.MODEL_NAME + "checkpoint.{}th.tar".format(str(training_iteration))
+                file_name = model_name + "checkpoint.{}th.tar".format(str(training_iteration))
+                file_name = os.path.join(cfg.OUTPUT_DIRECTORY, model_name, file_name)
                 if is_best:
                     logger.info("saving best model...")
                     model.save_checkpoint(file_name=file_name, is_best=is_best,
@@ -253,7 +227,8 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
 
         if training_iteration % cfg.SAVE_EVERY == 0:
             logger.info("forcing to save model every several epochs...")
-            file_name =  cfg.MODEL_NAME + " checkpoint_force.{}th.tar".format(str(training_iteration))
+            file_name = model_name + " checkpoint_force.{}th.tar".format(str(training_iteration))
+            file_name = os.path.join(cfg.OUTPUT_DIRECTORY, model_name, file_name)
             model.save_checkpoint(file_name=file_name, is_best=False, optimizer_state_dict = optimizer.state_dict())
 
         training_iteration += 1  # warning: iteratin represents epochs here
@@ -261,14 +236,10 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
 
 
 def main(flags, use_cuda):
-    # print(flags)
 
-    # for arg, val in flags.items():
-    #     logger.info("{} : {}".format(arg, val))
-    # \TODO enable argparser
 
-    if not os.path.exists(cfg.OUTPUT_DIRECTORY):
-        os.mkdir(os.path.join(os.getcwd(), cfg.OUTPUT_DIRECTORY))
+    if not os.path.exists(os.path.join(cfg.OUTPUT_DIRECTORY, flags.run)):
+        os.mkdir(os.path.join(os.getcwd(), cfg.OUTPUT_DIRECTORY, flags.run))
 
     # Some checks on the flags
     if cfg.GENERATE_VOCABULARIES:
@@ -287,7 +258,7 @@ def main(flags, use_cuda):
     val_data_paths = {split_name: os.path.join(cfg.DATA_DIRECTORY, split_name + '.json') for split_name in test_splits}  # \TODO val dataset not exist
 
     if cfg.MODE == "train":
-        train(train_data_path=train_data_path, val_data_paths=val_data_paths, use_cuda=use_cuda)
+        train(train_data_path=train_data_path, val_data_paths=val_data_paths, use_cuda=use_cuda, model_name=flags.run)
 
     # \TODO enable running on test set. See below.
 
@@ -340,9 +311,24 @@ def main(flags, use_cuda):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="LGCN models for GSCAN")
+    # \TODO merge args into config. See Ronghang's code.
+    parser.add_argument('--run', type=str, help='Define the run name')
+    parser.add_argument('--txt', dest='redirect_output', action='store_true')
+    parser.set_defaults(redirect_output=False)
+    args = parser.parse_args()
     FORMAT = "%(asctime)-15s %(message)s"
-    logging.basicConfig(format=FORMAT, level=logging.DEBUG,
-                        datefmt="%Y-%m-%d %H:%M")
+
+    if args.redirect_output:
+        output_file = open(os.path.join('exp/', args.run + '.txt'), 'w')
+        sys.stdout = output_file
+        sys.stderr = sys.stdout
+        logging.basicConfig(format=FORMAT, level=logging.DEBUG,
+                            datefmt="%Y-%m-%d %H:%M", filename=os.path.join('exp/', args.run + '.txt'))
+    else:
+        logging.basicConfig(format=FORMAT, level=logging.DEBUG,
+                            datefmt="%Y-%m-%d %H:%M")
+
     logger = logging.getLogger(__name__)
     use_cuda = True if torch.cuda.is_available() else False
     logger.info("Initialize logger")
@@ -351,8 +337,5 @@ if __name__ == "__main__":
         logger.info("Using CUDA.")
         logger.info("Cuda version: {}".format(torch.version.cuda))
 
-    parser = argparse.ArgumentParser(description="LGCN models for GSCAN")
-    # \TODO merge args into config. See Ronghang's code.
-    args = parser.parse_args()
 
     main(args, use_cuda)

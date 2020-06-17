@@ -86,7 +86,7 @@ class GSCAN_model(nn.Module):
         self.auxiliary_task = cfg.AUXILIARY_TASK
 
 
-        self.output_directory = cfg.OUTPUT_DIRECTORY
+        # self.output_directory = cfg.OUTPUT_DIRECTORY
         self.trained_iterations = 0
         self.best_iteration = 0
         self.best_exact_match = 0
@@ -309,14 +309,14 @@ class GSCAN_model(nn.Module):
             self.best_accuracy = accuracy
             self.best_iteration = self.trained_iterations
     
-    def save_checkpoint(self, file_name: str, is_best: bool, optimizer_state_dict: dict) -> str:
+    def save_checkpoint(self, path: str, is_best: bool, optimizer_state_dict: dict) -> str:
         """
         :param file_name: filename to save checkpoint in.
         :param is_best: boolean describing whether or not the current state is the best the model has ever been.
         :param optimizer_state_dict: state of the optimizer.
         :return: str to path where the model is saved.
         """
-        path = os.path.join(self.output_directory, file_name)
+        # path = os.path.join(self.output_directory, file_name)
         state = self.get_current_state()
         state["optimizer_state_dict"] = optimizer_state_dict
         th.save(state, path)

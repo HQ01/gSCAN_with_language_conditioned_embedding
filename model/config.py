@@ -31,13 +31,13 @@ cfg = __C
 # general options
 # --------------------------------------------------------------------------- #
 ##OS options
-__C.DATA_DIRECTORY = "/root/cs395t_project/data/parsed_dataset"
+__C.DATA_DIRECTORY = "data/parsed_dataset"
 #__C.DATA_DIRECTORY = "/root/cse395t_project/data/sampled_parsed_dataset"
 # __C.DATA_DIRECTORY = "data/sampled_dataset"
-__C.OUTPUT_DIRECTORY = "output/"
+__C.OUTPUT_DIRECTORY = "output"
 # __C.MODEL_NAME = "June16_lstm2"
-#__C.RESUME_FROM_FILE = "output_model/model_best.pth.tar"
-__C.RESUME_FROM_FILE = ""
+# __C.RESUME_FROM_FILE = "output/lstm1_2checkpoint.3th.tar"
+# __C.RESUME_FROM_FILE = ""
 __C.EXP_NAME = '<fill-with-filename>'
 __C.OUTPUT_FILE_NAME = "predict.json"
 __C.MODE = "train"

@@ -37,11 +37,10 @@ def evaluate(data_iterator, model, max_decoding_steps, pad_idx, sos_idx, eos_idx
             float(np.mean(np.array(target_accuracies))) * 100
 
 
-def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
+def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, resume_from_file: str, is_baseline: bool):
     device = torch.device(type='cuda') if use_cuda else torch.device(type='cpu')
 
     logger.info("Loading Training set...")
-    logger.info(cfg.MODEL_NAME)
     train_iter, train_input_vocab, train_target_vocab = dataloader(train_data_path,
                                                                    batch_size=cfg.TRAIN.BATCH_SIZE,
                                                                    use_cuda=use_cuda)  # \TODO add k and statistics and shuffling
@@ -61,7 +60,7 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
     val_input_vocab_size, val_target_vocab_size = train_input_vocab_size, train_target_vocab_size
     logger.info("Done Loading Dev. set.")
 
-    model = GSCAN_model(pad_idx, eos_idx, train_input_vocab_size, train_target_vocab_size, is_baseline=False)
+    model = GSCAN_model(pad_idx, eos_idx, train_input_vocab_size, train_target_vocab_size, is_baseline=is_baseline)
 
     model = model.cuda() if use_cuda else model
 
@@ -80,7 +79,7 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
     best_loss = float('inf')
 
 
-    cfg.RESUME_FROM_FILE = "output_model/model_best.pth.tar"
+    cfg.RESUME_FROM_FILE = resume_from_file
     assert os.path.isfile(cfg.RESUME_FROM_FILE), "No checkpoint found at {}".format(cfg.RESUME_FROM_FILE)
     logger.info("Loading checkpoint from file at '{}'".format(cfg.RESUME_FROM_FILE))
     optimizer_state_dict = model.load_model(cfg.RESUME_FROM_FILE)
@@ -112,9 +111,6 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
 
 def main(flags, use_cuda):
 
-    if not os.path.exists(cfg.OUTPUT_DIRECTORY):
-        os.mkdir(os.path.join(os.getcwd(), cfg.OUTPUT_DIRECTORY))
-
     train_data_path = os.path.join(cfg.DATA_DIRECTORY, "train.json")
 
     test_splits = [
@@ -131,7 +127,8 @@ def main(flags, use_cuda):
     val_data_paths = {split_name: os.path.join(cfg.DATA_DIRECTORY, split_name + '.json') for split_name in test_splits}  # \TODO val dataset not exist
 
     if cfg.MODE == "train":
-        train(train_data_path=train_data_path, val_data_paths=val_data_paths, use_cuda=use_cuda)
+        train(train_data_path=train_data_path, val_data_paths=val_data_paths, use_cuda=use_cuda,
+              resume_from_file=flags.load, is_baseline=flags.is_baseline)
 
     elif cfg.MODE == "predict":
         raise NotImplementedError()
@@ -154,7 +151,9 @@ if __name__ == "__main__":
         logger.info("Cuda version: {}".format(torch.version.cuda))
 
     parser = argparse.ArgumentParser(description="LGCN models for GSCAN")
-    # \TODO merge args into config. See Ronghang's code.
+    parser.add_argument('--load', type=str, help='Path to model')
+    parser.add_argument('--baseline', dest='is_baseline', action='store_true')
+    parser.set_defaults(is_baseline=False)
     args = parser.parse_args()
 
     main(args, use_cuda)

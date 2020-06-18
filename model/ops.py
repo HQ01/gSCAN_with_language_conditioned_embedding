@@ -81,7 +81,8 @@ def apply_mask1d(attention, image_locs):
     tmp2 = image_locs.type(tmp1.type())
     tmp2 = tmp2.unsqueeze(dim=1).expand(batch_size, num_loc)
     mask = torch.ge(tmp1, tmp2)
-    attention = attention.masked_fill(mask, -1e30)
+    # attention = attention.masked_fill(mask, -1e30)
+    attention = attention.masked_fill(mask, -1e15)
     return attention
 
 

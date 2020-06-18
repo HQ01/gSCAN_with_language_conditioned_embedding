@@ -15,16 +15,14 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Encoder(nn.Module):
     def __init__(self, pad_idx, input_size):
-        super().__init__()
-        # general
+        super().__init__()        # general
         # self.embeddingsVar = nn.Parameter(
         #     torch.Tensor(embInit), requires_grad=(not args.WRD_EMB_FIXED))
         self.device = device
-        
+
         # configs
         self.d_x = input_size
         self.d_embed = cfg.CMD_D_EMBED
-
 
         # layers
         self.embedding = nn.Embedding(self.d_x, self.d_embed, padding_idx = pad_idx) #\Pay attention to whether d_x include sos, eos, etc.

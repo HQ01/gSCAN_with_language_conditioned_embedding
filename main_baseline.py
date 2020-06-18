@@ -12,7 +12,7 @@ from model.utils import *
 
 
 
-def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name: str):
+def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name: str, resume_from_file=None):
 
     logger.info("Loading Training set...")
     logger.info(model_name)
@@ -64,7 +64,8 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name
     # val_set.shuffle_data()
     logger.info("Done Loading Dev. set.")
 
-    model = GSCAN_model(pad_idx, eos_idx, train_input_vocab_size, train_target_vocab_size, is_baseline=True)
+    model = GSCAN_model(pad_idx, eos_idx, train_input_vocab_size, train_target_vocab_size, is_baseline=False,
+                        output_directory=os.path.join(os.getcwd(), cfg.OUTPUT_DIRECTORY, model_name))
 
     model = model.cuda() if use_cuda else model
 
@@ -83,13 +84,14 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name
     best_exact_match = 0
     best_loss = float('inf')
 
-    if cfg.RESUME_FROM_FILE:
-        assert os.path.isfile(cfg.RESUME_FROM_FILE), "No checkpoint found at {}".format(cfg.RESUME_FROM_FILE)
-        logger.info("Loading checkpoint from file at '{}'".format(cfg.RESUME_FROM_FILE))
-        optimizer_state_dict = model.load_model(cfg.RESUME_FROM_FILE)
+    # if cfg.RESUME_FROM_FILE:
+    if resume_from_file:
+        assert os.path.isfile(resume_from_file), "No checkpoint found at {}".format(resume_from_file)
+        logger.info("Loading checkpoint from file at '{}'".format(resume_from_file))
+        optimizer_state_dict = model.load_model(resume_from_file)
         optimizer.load_state_dict(optimizer_state_dict)
         start_iteration = model.trained_iterations
-        logger.info("Loaded checkpoint '{}' (iter {})".format(cfg.RESUME_FROM_FILE, start_iteration))
+        logger.info("Loaded checkpoint '{}' (iter {})".format(resume_from_file, start_iteration))
 
     logger.info("Training starts..")
     training_iteration = start_iteration
@@ -219,7 +221,7 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name
                     best_exact_match = test_exact_match
                     model.update_state(accuracy=test_accuracy, exact_match=test_exact_match, is_best=is_best)
                 file_name = model_name + "checkpoint.{}th.tar".format(str(training_iteration))
-                file_name = os.path.join(cfg.OUTPUT_DIRECTORY, model_name, file_name)
+                # file_name = os.path.join(os.getcwd(), cfg.OUTPUT_DIRECTORY, model_name, file_name)
                 if is_best:
                     logger.info("saving best model...")
                     model.save_checkpoint(file_name=file_name, is_best=is_best,
@@ -228,7 +230,7 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name
         if training_iteration % cfg.SAVE_EVERY == 0:
             logger.info("forcing to save model every several epochs...")
             file_name = model_name + " checkpoint_force.{}th.tar".format(str(training_iteration))
-            file_name = os.path.join(cfg.OUTPUT_DIRECTORY, model_name, file_name)
+            # file_name = os.path.join(os.getcwd(), cfg.OUTPUT_DIRECTORY, model_name, file_name)
             model.save_checkpoint(file_name=file_name, is_best=False, optimizer_state_dict = optimizer.state_dict())
 
         training_iteration += 1  # warning: iteratin represents epochs here
@@ -258,7 +260,8 @@ def main(flags, use_cuda):
     val_data_paths = {split_name: os.path.join(cfg.DATA_DIRECTORY, split_name + '.json') for split_name in test_splits}  # \TODO val dataset not exist
 
     if cfg.MODE == "train":
-        train(train_data_path=train_data_path, val_data_paths=val_data_paths, use_cuda=use_cuda, model_name=flags.run)
+        train(train_data_path=train_data_path, val_data_paths=val_data_paths, use_cuda=use_cuda, model_name=flags.run,
+              resume_from_file=flags.load)
 
     # \TODO enable running on test set. See below.
 
@@ -315,6 +318,7 @@ if __name__ == "__main__":
     # \TODO merge args into config. See Ronghang's code.
     parser.add_argument('--run', type=str, help='Define the run name')
     parser.add_argument('--txt', dest='redirect_output', action='store_true')
+    parser.add_argument('--load', type=str, help='Path to model')
     parser.set_defaults(redirect_output=False)
     args = parser.parse_args()
     FORMAT = "%(asctime)-15s %(message)s"

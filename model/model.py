@@ -28,7 +28,8 @@ device = th.device("cuda" if th.cuda.is_available() else "cpu")
 
 
 class GSCAN_model(nn.Module):
-    def __init__(self, pad_idx, target_eos_idx, input_vocab_size, target_vocab_size, is_baseline=False, multigpu=False):
+    def __init__(self, pad_idx, target_eos_idx, input_vocab_size, target_vocab_size, output_directory=None, is_baseline=False, multigpu=False,
+                 ):
         super().__init__()
 
         
@@ -46,10 +47,10 @@ class GSCAN_model(nn.Module):
         self.decoder = None
         # self.situation_encoder = None
         self.lgcn = None
-        self.size_embedding = nn.Linear(4, 16) # 64
-        self.shape_embedding = nn.Linear(3, 16)
-        self.yrgb_embedding = nn.Linear(4, 16)
-        self.agent_embedding = nn.Linear(5, 16) # skip the first bit
+        self.size_embedding = nn.Linear(4, 16, bias=False) # 64
+        self.shape_embedding = nn.Linear(3, 16, bias=False)
+        self.yrgb_embedding = nn.Linear(4, 16, bias=False)
+        self.agent_embedding = nn.Linear(5, 16, bias=False) # skip the first bit
         self.is_baseline = is_baseline
         # if CNN first then LGCN && embedding, num_channels = 256, num_conv_channels=50, SITU_D_FEAT = 150;
         # if LGCN first then CNN && embedding, num_channels = cfg.SITU_D_CTX, num_conv_channels = 50, SITU_D_FEAT = 256
@@ -86,7 +87,7 @@ class GSCAN_model(nn.Module):
         self.auxiliary_task = cfg.AUXILIARY_TASK
 
 
-        # self.output_directory = cfg.OUTPUT_DIRECTORY
+        self.output_directory = output_directory
         self.trained_iterations = 0
         self.best_iteration = 0
         self.best_exact_match = 0
@@ -94,11 +95,11 @@ class GSCAN_model(nn.Module):
 
         self.device = th.device("cuda" if th.cuda.is_available() else "cpu")
     
-    def nonzero_extractor(self, x, cnn_out=None, extract_mode = "base"):
+    def nonzero_extractor(self, x, cnn_out=None):
         lx = []
         for i in range(x.size(0)):
             sum_x = th.sum(x[i], dim=-1)
-            if extract_mode == "base":
+            if cnn_out is None:
                 lx.append(x[i, sum_x.gt(0), :])
             else:
                 lx.append(cnn_out[i, sum_x.gt(0), :])
@@ -163,7 +164,7 @@ class GSCAN_model(nn.Module):
         shape = self.shape_embedding(situation_batch[:, :, :, 4:7])
         rgb = self.yrgb_embedding(situation_batch[:, :, :, 7:11])
         agent = self.agent_embedding(situation_batch[:, :, :, 11:])
-        situation_batch = th.cat([size, shape, rgb, agent], dim=-1)
+        embedded_situation = th.cat([size, shape, rgb, agent], dim=-1)
 
 
         if self.is_baseline:
@@ -172,7 +173,7 @@ class GSCAN_model(nn.Module):
             situations_lengths = [image_num_memory for _ in range(batch_size)]
         else:
             # LGCN first, then CNN
-            xs = self.nonzero_extractor(situation_batch, None)
+            xs = self.nonzero_extractor(situation_batch, embedded_situation)
             gs = []
             graph_membership = []
             dgl_gs = [dgl.DGLGraph() for _ in range(batchSize)]
@@ -309,14 +310,14 @@ class GSCAN_model(nn.Module):
             self.best_accuracy = accuracy
             self.best_iteration = self.trained_iterations
     
-    def save_checkpoint(self, path: str, is_best: bool, optimizer_state_dict: dict) -> str:
+    def save_checkpoint(self, file_name: str, is_best: bool, optimizer_state_dict: dict) -> str:
         """
         :param file_name: filename to save checkpoint in.
         :param is_best: boolean describing whether or not the current state is the best the model has ever been.
         :param optimizer_state_dict: state of the optimizer.
         :return: str to path where the model is saved.
         """
-        # path = os.path.join(self.output_directory, file_name)
+        path = os.path.join(self.output_directory, file_name)
         state = self.get_current_state()
         state["optimizer_state_dict"] = optimizer_state_dict
         th.save(state, path)

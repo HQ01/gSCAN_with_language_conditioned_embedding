@@ -76,11 +76,6 @@ class LGCNLayer(nn.Module):
 
         return cmd
 
-
-
-
-
-    
     def graph_nn(self, g, h, ctx, c, graph_membership):
 
         g = g.local_var()
@@ -91,18 +86,18 @@ class LGCNLayer(nn.Module):
 
         src_ctx = self.W7(cat) * self.W8(c_broadcast)
         dst_ctx = self.W6(cat)
-        
 
-        
+
+
         g.srcdata.update({"s_e": src_ctx})
         g.dstdata.update({"d_e": dst_ctx})
         g.apply_edges(fn.u_dot_v("s_e", "d_e", "e"))
         e = g.edata.pop('e')
-        
+
 
         g.edata['a'] = edge_softmax(g, e)
         g.ndata['ft'] = self.W9(cat) * self.W10(c_broadcast)
-        
+
         g.update_all(fn.u_mul_e('ft', 'a', 'm'), fn.sum('m', 's'))
         ctx = self.W11(ctx) + self.W11b(g.ndata['s'])
 

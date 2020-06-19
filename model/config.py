@@ -57,19 +57,19 @@ __C.WRD_EMB_INIT_FILE = ''
 # --------------------------------------------------------------------------- #
 ## Command Encoder
 __C.CMD_D_EMBED = 32
-__C.CMD_D_ENC = 256
-__C.CMD_D_H = 256 # Same as ENC_DIM
+__C.CMD_D_ENC = 64
+__C.CMD_D_H = 64 # Same as ENC_DIM
 
 ## Situation Encoder (LGCN)
 # __C.SITU_D_FEAT = 16
 __C.SITU_D_FEAT = 64 # 3 * D_CNN_OUTPUT if CNN then LGCN
-__C.SITU_D_CTX = 128 # 512
-__C.SITU_D_CMD = 256 # 512
-__C.SITU_D_CNN_OUTPUT = 256
+__C.SITU_D_CTX = 64 # 512
+__C.SITU_D_CMD = 64 # 512
+__C.SITU_D_CNN_OUTPUT = 64
 #1
 
 ## Decoder
-__C.DEC_D_H = 256
+__C.DEC_D_H = 64
 __C.DEC_NUM_LAYER = 1
 __C.DEC_CONDITIONAL_ATTENTION = True
 

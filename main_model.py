@@ -12,7 +12,7 @@ from model.utils import *
 
 
 
-def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name: str, resume_from_file=None):
+def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name: str, is_baseline: bool, resume_from_file=None):
 
     logger.info("Loading Training set...")
     logger.info(model_name)
@@ -64,7 +64,7 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name
     # val_set.shuffle_data()
     logger.info("Done Loading Dev. set.")
 
-    model = GSCAN_model(pad_idx, eos_idx, train_input_vocab_size, train_target_vocab_size, is_baseline=False,
+    model = GSCAN_model(pad_idx, eos_idx, train_input_vocab_size, train_target_vocab_size, is_baseline=is_baseline,
                         output_directory=os.path.join(os.getcwd(), cfg.OUTPUT_DIRECTORY, model_name))
 
     model = model.cuda() if use_cuda else model
@@ -255,13 +255,19 @@ def main(flags, use_cuda):
         'test',
         'visual',
         'visual_easier',
-        'dev'
+        'dev',
+        'adverb_2',
+        'contextual'
     ]
     val_data_paths = {split_name: os.path.join(cfg.DATA_DIRECTORY, split_name + '.json') for split_name in test_splits}  # \TODO val dataset not exist
 
     if cfg.MODE == "train":
+        if flags.is_baseline:
+            logger.info("Running baseline + embedding...")
+        else:
+            logger.info("Running full model...")
         train(train_data_path=train_data_path, val_data_paths=val_data_paths, use_cuda=use_cuda, model_name=flags.run,
-              resume_from_file=flags.load)
+              resume_from_file=flags.load, is_baseline=flags.is_baseline)
 
     # \TODO enable running on test set. See below.
 
@@ -318,8 +324,9 @@ if __name__ == "__main__":
     # \TODO merge args into config. See Ronghang's code.
     parser.add_argument('--run', type=str, help='Define the run name')
     parser.add_argument('--txt', dest='redirect_output', action='store_true')
+    parser.add_argument('--baseline', dest='is_baseline', action='store_true')
     parser.add_argument('--load', type=str, help='Path to model')
-    parser.set_defaults(redirect_output=False)
+    parser.set_defaults(redirect_output=False, is_baseline=False)
     args = parser.parse_args()
     FORMAT = "%(asctime)-15s %(message)s"
 

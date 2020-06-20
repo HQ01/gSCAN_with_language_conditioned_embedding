@@ -168,7 +168,7 @@ class GSCAN_model(nn.Module):
 
 
         if self.is_baseline:
-            situation_out = self.situation_encoder(situation_batch)
+            situation_out = self.situation_encoder(embedded_situation)
             batch_size, image_num_memory, _ = situation_out.size()
             situations_lengths = [image_num_memory for _ in range(batch_size)]
         else:

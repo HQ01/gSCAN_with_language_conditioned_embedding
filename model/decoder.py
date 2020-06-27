@@ -1,14 +1,8 @@
-import torch
-import torch.nn as nn
-from torch.nn.utils.rnn import pack_padded_sequence
-from torch.nn.utils.rnn import pad_packed_sequence
-import torch.nn.functional as F
-import logging
-from typing import List
 from typing import Tuple
 
-from .utils import *
 from .config import cfg
+from .utils import *
+
 
 class Attention(nn.Module):
 
@@ -116,9 +110,9 @@ class BahdanauAttentionDecoderRNN(nn.Module):
         # Bahdanau attention
         context_command, attention_weights_commands = self.textual_attention(
             queries=last_hidden.transpose(0, 1), projected_keys=encoded_commands,
-          values=encoded_commands, memory_lengths=commands_lengths)
+            values=encoded_commands, memory_lengths=commands_lengths)
         batch_size, image_num_memory, _ = encoded_situations.size()
-        #situation_lengths = [image_num_memory for _ in range(batch_size)]
+        # situation_lengths = [image_num_memory for _ in range(batch_size)]
 
         if self.conditional_attention:
             queries = torch.cat([last_hidden.transpose(0, 1), context_command], dim=-1)
@@ -126,14 +120,12 @@ class BahdanauAttentionDecoderRNN(nn.Module):
         else:
             queries = last_hidden.transpose(0, 1)
 
-        
         # visual attention
         context_situation, attention_weights_situations = self.visual_attention(
             queries=queries, projected_keys=encoded_situations,
             values=encoded_situations, memory_lengths=situations_lengths)
         # context : [batch_size, 1, hidden_size]
         # attention_weights : [batch_size, 1, max_input_length]
-
 
         # Concatenate the context vector and RNN hidden state, and map to an output
         attention_weights_commands = attention_weights_commands.squeeze(1)  # [batch_size, max_input_length]
@@ -146,12 +138,8 @@ class BahdanauAttentionDecoderRNN(nn.Module):
         lstm_output, hidden = self.lstm(concat_input, last_hidden)
         # lstm_output: [1, batch_size, hidden_size]
         # hidden: tuple of each [num_layers, batch_size, hidden_size] (pair for hidden and cell)
-        # output = self.hidden_to_output(lstm_output)  # [batch_size, output_size]
-        # output = output.squeeze(dim=0)
 
         # Concatenate all outputs and project to output size.
-        # TODO: what does pre_output do here??
-        # next 3 lines are for original output
         if self.is_baseline:
             pre_output = torch.cat([embedded_input, lstm_output,
                                     context_command.transpose(0, 1), context_situation.transpose(0, 1)], dim=2)
@@ -160,7 +148,7 @@ class BahdanauAttentionDecoderRNN(nn.Module):
         else:
             output = self.hidden_to_output(lstm_output)
 
-        output = output.squeeze(dim=0)   # [batch_size, output_size]
+        output = output.squeeze(dim=0)  # [batch_size, output_size]
 
         return (output, hidden, attention_weights_situations.squeeze(dim=1), attention_weights_commands,
                 attention_weights_situations)
@@ -187,7 +175,7 @@ class BahdanauAttentionDecoderRNN(nn.Module):
         batch_size, max_time = input_tokens.size()
 
         # Sort the sequences by length in descending order
-        #input_lengths = torch.tensor(input_lengths, dtype=torch.long, device=self.device)
+        # input_lengths = torch.tensor(input_lengths, dtype=torch.long, device=self.device)
         input_lengths, perm_idx = torch.sort(input_lengths, descending=True)
         input_tokens_sorted = input_tokens.index_select(dim=0, index=perm_idx)
         initial_h, initial_c = init_hidden
@@ -195,12 +183,10 @@ class BahdanauAttentionDecoderRNN(nn.Module):
         hidden = (initial_h.index_select(dim=1, index=perm_idx),
                   initial_c.index_select(dim=1, index=perm_idx))
 
-
-        encoded_commands = encoded_commands.index_select(dim=0, index=perm_idx) # change from 1 to 0
+        encoded_commands = encoded_commands.index_select(dim=0, index=perm_idx)  # change from 1 to 0
         commands_lengths = torch.tensor(commands_lengths, device=self.device)
         commands_lengths = commands_lengths.index_select(dim=0, index=perm_idx)
         encoded_situations = encoded_situations.index_select(dim=0, index=perm_idx)
-
 
         # For efficiency
         projected_keys_visual = self.visual_attention.key_layer(
@@ -227,7 +213,6 @@ class BahdanauAttentionDecoderRNN(nn.Module):
         seq_len = input_lengths[unperm_idx].tolist()
         attention_weights = attention_weights.index_select(dim=1, index=unperm_idx)
 
-
         return lstm_output, seq_len, attention_weights.sum(dim=0)
         # output : [unnormalized log-score] [max_length, batch_size, output_size]
         # seq_len : length of each output sequence
@@ -250,37 +235,31 @@ class BahdanauAttentionDecoderRNN(nn.Module):
         )
 
 
-
-
-
-
 class Decoder(nn.Module):
-    def __init__(self, target_vocab_size, target_pad_idx, visual_key_size=cfg.SITU_D_CNN_OUTPUT*3,\
-            visual_query_size=cfg.DEC_D_H, visual_hidden_size=cfg.DEC_D_H, is_baseline=True): #\TODO: does target vocab size include special tokens?
+    def __init__(self, target_vocab_size, target_pad_idx, visual_key_size=cfg.SITU_D_CNN_OUTPUT * 3, \
+                 visual_query_size=cfg.DEC_D_H, visual_hidden_size=cfg.DEC_D_H,
+                 is_baseline=True):
         super().__init__()
         # if CNN then LGCN: visual_key_size = cfg.SITU_D_CTX
-        self.visual_attention = Attention(key_size = visual_key_size,\
-            query_size=visual_query_size, hidden_size=visual_hidden_size)
-        self.textual_attention = Attention(key_size = cfg.CMD_D_H, query_size=cfg.DEC_D_H, hidden_size=cfg.DEC_D_H)
+        self.visual_attention = Attention(key_size=visual_key_size, \
+                                          query_size=visual_query_size, hidden_size=visual_hidden_size)
+        self.textual_attention = Attention(key_size=cfg.CMD_D_H, query_size=cfg.DEC_D_H, hidden_size=cfg.DEC_D_H)
 
-        
         self.attentionDecoder = BahdanauAttentionDecoderRNN(hidden_size=cfg.DEC_D_H,
-                                                            output_size = target_vocab_size,
-                                                            num_layers = cfg.DEC_NUM_LAYER,
-                                                            dropout_probability = cfg.decoderDropout,
+                                                            output_size=target_vocab_size,
+                                                            num_layers=cfg.DEC_NUM_LAYER,
+                                                            dropout_probability=cfg.decoderDropout,
                                                             padding_idx=target_pad_idx,
                                                             textual_attention=self.textual_attention,
                                                             visual_attention=self.visual_attention,
-                                                            conditional_attention = cfg.DEC_CONDITIONAL_ATTENTION,
+                                                            conditional_attention=cfg.DEC_CONDITIONAL_ATTENTION,
                                                             is_baseline=is_baseline)
-        
+
         self.tanh = nn.Tanh()
         self.enc_hidden_to_dec_hidden = nn.Linear(cfg.CMD_D_H, cfg.DEC_D_H)
 
-
     def forward(self, target_batch, target_length, initial_hidden, encoded_commands,
                 commands_lengths, encoded_situations, situations_lengths):
-
         # print("initial_hidden size is ", initial_hidden.size())
 
         initial_hidden = self.attentionDecoder.initialize_hidden(
@@ -288,13 +267,12 @@ class Decoder(nn.Module):
         )
 
         decoder_output, _, context_situation = self.attentionDecoder(input_tokens=target_batch,
-                                                                    input_lengths=target_length,
-                                                                    init_hidden=initial_hidden,
-                                                                    encoded_commands=encoded_commands,
-                                                                    commands_lengths=commands_lengths,
-                                                                    encoded_situations=encoded_situations,
-                                                                    situations_lengths=situations_lengths)
+                                                                     input_lengths=target_length,
+                                                                     init_hidden=initial_hidden,
+                                                                     encoded_commands=encoded_commands,
+                                                                     commands_lengths=commands_lengths,
+                                                                     encoded_situations=encoded_situations,
+                                                                     situations_lengths=situations_lengths)
         decoder_output = F.log_softmax(decoder_output, dim=-1)
 
         return decoder_output, context_situation
-

@@ -1,6 +1,5 @@
 import torch
 import torchtext as tt
-import torchtext.data as data
 
 
 def dataloader(data_path, batch_size=32, use_cuda=False, fix_length=None, input_vocab=None, target_vocab=None,
@@ -27,9 +26,11 @@ def dataloader(data_path, batch_size=32, use_cuda=False, fix_length=None, input_
     else:
         TARGET_FIELD.vocab = target_vocab
     if use_cuda:
-        iterator = tt.data.Iterator(dataset, batch_size=batch_size, device=torch.device(type='cuda'), shuffle=random_shuffle)
+        iterator = tt.data.Iterator(dataset, batch_size=batch_size, device=torch.device(type='cuda'),
+                                    shuffle=random_shuffle)
     else:
-        iterator = tt.data.Iterator(dataset, batch_size=batch_size, device=torch.device(type='cpu'), shuffle=random_shuffle)
+        iterator = tt.data.Iterator(dataset, batch_size=batch_size, device=torch.device(type='cpu'),
+                                    shuffle=random_shuffle)
     return iterator, INPUT_FIELD.vocab, TARGET_FIELD.vocab
 
 

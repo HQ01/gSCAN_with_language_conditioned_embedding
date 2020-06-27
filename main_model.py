@@ -10,27 +10,22 @@ from model.model import GSCAN_model
 from model.utils import *
 
 
-
-
-def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name: str, is_baseline: bool, resume_from_file=None):
-
+def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name: str, is_baseline: bool,
+          resume_from_file=None):
     logger.info("Loading Training set...")
     logger.info(model_name)
     train_iter, train_input_vocab, train_target_vocab = dataloader(train_data_path,
                                                                    batch_size=cfg.TRAIN.BATCH_SIZE,
-                                                                   use_cuda=use_cuda)  # \TODO add k and statistics and shuffling
+                                                                   use_cuda=use_cuda)
     val_iters = {}
     for split_name, path in val_data_paths.items():
         val_iters[split_name], _, _ = dataloader(path, batch_size=cfg.VAL_BATCH_SIZE, use_cuda=use_cuda,
-                                input_vocab=train_input_vocab, target_vocab=train_target_vocab)
+                                                 input_vocab=train_input_vocab, target_vocab=train_target_vocab)
 
     pad_idx, sos_idx, eos_idx = train_target_vocab.stoi['<pad>'], train_target_vocab.stoi['<sos>'], \
                                 train_target_vocab.stoi['<eos>']
 
     train_input_vocab_size, train_target_vocab_size = len(train_input_vocab.itos), len(train_target_vocab.itos)
-
-    # \TODO decide whether to add sos token and eos token to each input command/target label
-    # Each data item dimension
 
     '''
     Input (command) [0]: batch_size x max_cmd_len       [1]: batch_size x 0 (len for each cmd)
@@ -41,16 +36,6 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name
     '''
     logger.info("Done Loading Training set.")
 
-    # \TODO add statistics for train/val set, see example below
-    '''
-    logger.info("  Loaded {} training examples.".format(training_set.num_examples))
-    logger.info("  Input vocabulary size training set: {}".format(training_set.input_vocabulary_size))
-    logger.info("  Most common input words: {}".format(training_set.input_vocabulary.most_common(5)))
-    logger.info("  Output vocabulary size training set: {}".format(training_set.target_vocabulary_size))
-    logger.info("  Most common target words: {}".format(training_set.target_vocabulary.most_common(5)))
-    '''
-
-    # I think this part is basically saving generated vocabs.
     # if generate_vocabularies:
     #     training_set.save_vocabularies(input_vocab_path, target_vocab_path)
     #     logger.info("Saved vocabularies to {} for input and {} for target.".format(input_vocab_path, target_vocab_path))
@@ -69,7 +54,6 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name
 
     model = model.cuda() if use_cuda else model
 
-
     log_parameters(model)
     trainable_parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
     optimizer = torch.optim.Adam(trainable_parameters, lr=cfg.TRAIN.SOLVER.LR,
@@ -77,14 +61,9 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name
     scheduler = LambdaLR(optimizer,
                          lr_lambda=lambda t: cfg.TRAIN.SOLVER.LR_DECAY ** (t / cfg.TRAIN.SOLVER.LR_DECAY_STEP))
 
-    # Load model and vocabularies if resuming.
     start_iteration = 1
-    best_iteration = 1
-    best_accuracy = 0
     best_exact_match = 0
-    best_loss = float('inf')
 
-    # if cfg.RESUME_FROM_FILE:
     if resume_from_file:
         assert os.path.isfile(resume_from_file), "No checkpoint found at {}".format(resume_from_file)
         logger.info("Loading checkpoint from file at '{}'".format(resume_from_file))
@@ -98,34 +77,20 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name
     while training_iteration < cfg.TRAIN.MAX_EPOCH:  # iterations here actually means "epoch"
 
         # Shuffle the dataset and loop over it.
-        # training_set.shuffle_data() \TODO add reshuffle option in iterator
+        # training_set.shuffle_data()
         num_batch = 0
         for x in train_iter:
-            # with torch.no_grad():
-            #     model.eval()
-            #     logger.info("Evaluating..")
-            #     # accuracy, exact_match, target_accuracy = evaluate()
-            #
-            #     accuracy, exact_match, target_accuracy = evaluate(
-            #         val_iter, model=model,
-            #         max_decoding_steps=30, pad_idx=pad_idx,
-            #         sos_idx=sos_idx,
-            #         eos_idx=eos_idx,
-            #         max_examples_to_evaluate=None)
-            #
-            #     logger.info("  Evaluation Accuracy: %5.2f Exact Match: %5.2f "
-            #                 " Target Accuracy: %5.2f" % (accuracy, exact_match, target_accuracy))
             is_best = False
             model.train()
             target_scores, target_position_scores = model(x.input, x.situation,
-                                                          x.target)  # \TODO: model does not output target position prediction
+                                                          x.target)
 
             loss = model.get_loss(target_scores, x.target[0])
 
             target_loss = 0
             if cfg.AUXILIARY_TASK:
                 target_loss = model.get_auxiliary_loss(target_position_scores,
-                                                       x.target)  # \TODO x.target currently does not include ground truth target position
+                                                       x.target)
             loss += cfg.TRAIN.WEIGHT_TARGET_LOSS * target_loss
 
             # Backward pass and update model parameters.
@@ -140,7 +105,7 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name
                 accuracy, exact_match = model.get_metrics(target_scores, x.target[0])
                 if cfg.AUXILIARY_TASK:
                     auxiliary_accuracy_target = model.get_auxiliary_accuracy(target_position_scores,
-                                                                             x.target)  # \TODO add ground truth target position into x.target
+                                                                             x.target)
                 else:
                     auxiliary_accuracy_target = 0.
                 learning_rate = scheduler.get_lr()[0]
@@ -150,52 +115,10 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name
 
             num_batch += 1
 
-            #test code
-            # with torch.no_grad():
-            #     model.eval()
-            #     logger.info("Evaluating..")
-            #     # accuracy, exact_match, target_accuracy = evaluate()
-            #     test_exact_match = 0
-            #     test_accuracy = 0
-            #     print(val_iters)
-            #     for split_name, val_iter in val_iters.items():
-            #         accuracy, exact_match, target_accuracy = evaluate(
-            #             val_iter, model=model,
-            #             max_decoding_steps=30, pad_idx=pad_idx,
-            #             sos_idx=sos_idx,
-            #             eos_idx=eos_idx,
-            #             max_examples_to_evaluate=None)
-            #         if split_name == 'test':
-            #             test_exact_match = exact_match
-            #             test_accuracy = accuracy
-            #
-            #         logger.info(" %s Accuracy: %5.2f Exact Match: %5.2f "
-            #                     " Target Accuracy: %5.2f " % (split_name, accuracy, exact_match, target_accuracy))
-            #     # try:
-            #     #     print(val_iters)
-            #     #     for split_name, val_iter in val_iters.items():
-            #     #         accuracy, exact_match, target_accuracy = evaluate(
-            #     #             val_iter, model=model,
-            #     #             max_decoding_steps=30, pad_idx=pad_idx,
-            #     #             sos_idx=sos_idx,
-            #     #             eos_idx=eos_idx,
-            #     #             max_examples_to_evaluate=None)
-            #     #         if split_name == 'test':
-            #     #             test_exact_match = exact_match
-            #     #             test_accuracy = accuracy
-            #     #
-            #     #         logger.info(" %s Accuracy: %5.2f Exact Match: %5.2f "
-            #     #                     " Target Accuracy: %5.2f " % (split_name, accuracy, exact_match, target_accuracy))
-            #     # except:
-            #     #     print("Exception!")
-            #
-            #     print("reach here")
-
-        if training_iteration % cfg.EVALUATE_EVERY == 0:  # \TODO add evaluation
+        if training_iteration % cfg.EVALUATE_EVERY == 0:
             with torch.no_grad():
                 model.eval()
                 logger.info("Evaluating..")
-                # accuracy, exact_match, target_accuracy = evaluate()
                 test_exact_match = 0
                 test_accuracy = 0
                 try:
@@ -231,15 +154,13 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, model_name
             logger.info("forcing to save model every several epochs...")
             file_name = model_name + " checkpoint_force.{}th.tar".format(str(training_iteration))
             # file_name = os.path.join(os.getcwd(), cfg.OUTPUT_DIRECTORY, model_name, file_name)
-            model.save_checkpoint(file_name=file_name, is_best=False, optimizer_state_dict = optimizer.state_dict())
+            model.save_checkpoint(file_name=file_name, is_best=False, optimizer_state_dict=optimizer.state_dict())
 
         training_iteration += 1  # warning: iteratin represents epochs here
     logger.info("Finished training.")
 
 
 def main(flags, use_cuda):
-
-
     if not os.path.exists(os.path.join(cfg.OUTPUT_DIRECTORY, flags.run)):
         os.mkdir(os.path.join(os.getcwd(), cfg.OUTPUT_DIRECTORY, flags.run))
 
@@ -259,7 +180,7 @@ def main(flags, use_cuda):
         'adverb_2',
         'contextual'
     ]
-    val_data_paths = {split_name: os.path.join(cfg.DATA_DIRECTORY, split_name + '.json') for split_name in test_splits}  # \TODO val dataset not exist
+    val_data_paths = {split_name: os.path.join(cfg.DATA_DIRECTORY, split_name + '.json') for split_name in test_splits}
 
     if cfg.MODE == "train":
         if flags.is_baseline:
@@ -268,48 +189,6 @@ def main(flags, use_cuda):
             logger.info("Running full model...")
         train(train_data_path=train_data_path, val_data_paths=val_data_paths, use_cuda=use_cuda, model_name=flags.run,
               resume_from_file=flags.load, is_baseline=flags.is_baseline)
-
-    # \TODO enable running on test set. See below.
-
-    # elif flags["mode"] == "test":
-    #     assert os.path.exists(os.path.join(flags["data_directory"], flags["input_vocab_path"])) and os.path.exists(
-    #         os.path.join(flags["data_directory"], flags["target_vocab_path"])), \
-    #         "No vocabs found at {} and {}".format(flags["input_vocab_path"], flags["target_vocab_path"])
-    #     splits = flags["splits"].split(",")
-    #     for split in splits:
-    #         logger.info("Loading {} dataset split...".format(split))
-    #         test_set = GroundedScanDataset(data_path, flags["data_directory"], split=split,
-    #                                        input_vocabulary_file=flags["input_vocab_path"],
-    #                                        target_vocabulary_file=flags["target_vocab_path"], generate_vocabulary=False,
-    #                                        k=flags["k"])
-    #         test_set.read_dataset(max_examples=None,
-    #                               simple_situation_representation=flags["simple_situation_representation"])
-    #         logger.info("Done Loading {} dataset split.".format(flags["split"]))
-    #         logger.info("  Loaded {} examples.".format(test_set.num_examples))
-    #         logger.info("  Input vocabulary size: {}".format(test_set.input_vocabulary_size))
-    #         logger.info("  Most common input words: {}".format(test_set.input_vocabulary.most_common(5)))
-    #         logger.info("  Output vocabulary size: {}".format(test_set.target_vocabulary_size))
-    #         logger.info("  Most common target words: {}".format(test_set.target_vocabulary.most_common(5)))
-
-    #         model = Model(input_vocabulary_size=test_set.input_vocabulary_size,
-    #                       target_vocabulary_size=test_set.target_vocabulary_size,
-    #                       num_cnn_channels=test_set.image_channels,
-    #                       input_padding_idx=test_set.input_vocabulary.pad_idx,
-    #                       target_pad_idx=test_set.target_vocabulary.pad_idx,
-    #                       target_eos_idx=test_set.target_vocabulary.eos_idx,
-    #                       **flags)
-    #         model = model.cuda() if use_cuda else model
-
-    #         # Load model and vocabularies if resuming.
-    #         assert os.path.isfile(flags["resume_from_file"]), "No checkpoint found at {}".format(flags["resume_from_file"])
-    #         logger.info("Loading checkpoint from file at '{}'".format(flags["resume_from_file"]))
-    #         model.load_model(flags["resume_from_file"])
-    #         start_iteration = model.trained_iterations
-    #         logger.info("Loaded checkpoint '{}' (iter {})".format(flags["resume_from_file"], start_iteration))
-    #         output_file_name = "_".join([split, flags["output_file_name"]])
-    #         output_file_path = os.path.join(flags["output_directory"], output_file_name)
-    #         output_file = predict_and_save(dataset=test_set, model=model, output_file_path=output_file_path, **flags)
-    #         logger.info("Saved predictions to {}".format(output_file))
 
     elif cfg.MODE == "predict":
         raise NotImplementedError()
@@ -321,7 +200,6 @@ def main(flags, use_cuda):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LGCN models for GSCAN")
-    # \TODO merge args into config. See Ronghang's code.
     parser.add_argument('--run', type=str, help='Define the run name')
     parser.add_argument('--txt', dest='redirect_output', action='store_true')
     parser.add_argument('--baseline', dest='is_baseline', action='store_true')
@@ -347,6 +225,5 @@ if __name__ == "__main__":
     if use_cuda:
         logger.info("Using CUDA.")
         logger.info("Cuda version: {}".format(torch.version.cuda))
-
 
     main(args, use_cuda)

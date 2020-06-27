@@ -9,9 +9,7 @@ from model.model import GSCAN_model
 from model.utils import *
 
 
-
-# import models
-def evaluate(data_iterator, model, max_decoding_steps, pad_idx, sos_idx, eos_idx, max_examples_to_evaluate=None):  # \TODO evaluate function might be broken now. This is Ruis' code.
+def evaluate(data_iterator, model, max_decoding_steps, pad_idx, sos_idx, eos_idx, max_examples_to_evaluate=None):
     target_accuracies = []
     exact_match = 0
     num_examples = 0
@@ -20,12 +18,9 @@ def evaluate(data_iterator, model, max_decoding_steps, pad_idx, sos_idx, eos_idx
     for input_sequence, output_sequence, target_sequence, _, _, aux_acc_target in predict(
             data_iterator=data_iterator, model=model, max_decoding_steps=max_decoding_steps, pad_idx=pad_idx,
             sos_idx=sos_idx, eos_idx=eos_idx, max_examples_to_evaluate=max_examples_to_evaluate):
-        # accuracy = sequence_accuracy(output_sequence, target_sequence[0].tolist()[1:-1])
-        # accuracy = sequence_accuracy(output_sequence, target_sequence)
         num_examples += output_sequence.shape[0]
         seq_eq = torch.eq(output_sequence, target_sequence)
         mask = torch.eq(target_sequence, pad_idx) + torch.eq(target_sequence, sos_idx)
-               # torch.eq(target_sequence, eos_idx)
         seq_eq.masked_fill_(mask, 0)
         total = (~mask).sum(-1).float()
         accuracy = seq_eq.sum(-1) / total
@@ -34,7 +29,7 @@ def evaluate(data_iterator, model, max_decoding_steps, pad_idx, sos_idx, eos_idx
         exact_match += accuracy.eq(1.).sum().data.item()
         target_accuracies.append(aux_acc_target)
     return (float(correct_terms) / total_terms) * 100, (exact_match / num_examples) * 100, \
-            float(np.mean(np.array(target_accuracies))) * 100
+           float(np.mean(np.array(target_accuracies))) * 100
 
 
 def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, resume_from_file: str, is_baseline: bool):
@@ -43,17 +38,16 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, resume_fro
     logger.info("Loading Training set...")
     train_iter, train_input_vocab, train_target_vocab = dataloader(train_data_path,
                                                                    batch_size=cfg.TRAIN.BATCH_SIZE,
-                                                                   use_cuda=use_cuda)  # \TODO add k and statistics and shuffling
+                                                                   use_cuda=use_cuda)
     val_iters = {}
     for split_name, path in val_data_paths.items():
         val_iters[split_name], _, _ = dataloader(path, batch_size=cfg.VAL_BATCH_SIZE, use_cuda=use_cuda,
-                                input_vocab=train_input_vocab, target_vocab=train_target_vocab)
+                                                 input_vocab=train_input_vocab, target_vocab=train_target_vocab)
 
     pad_idx, sos_idx, eos_idx = train_target_vocab.stoi['<pad>'], train_target_vocab.stoi['<sos>'], \
                                 train_target_vocab.stoi['<eos>']
 
     train_input_vocab_size, train_target_vocab_size = len(train_input_vocab.itos), len(train_target_vocab.itos)
-
 
     logger.info("Loading Dev. set...")
 
@@ -71,14 +65,6 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, resume_fro
     scheduler = LambdaLR(optimizer,
                          lr_lambda=lambda t: cfg.TRAIN.SOLVER.LR_DECAY ** (t / cfg.TRAIN.SOLVER.LR_DECAY_STEP))
 
-    # Load model and vocabularies if resuming.
-    start_iteration = 1
-    best_iteration = 1
-    best_accuracy = 0
-    best_exact_match = 0
-    best_loss = float('inf')
-
-
     cfg.RESUME_FROM_FILE = resume_from_file
     assert os.path.isfile(cfg.RESUME_FROM_FILE), "No checkpoint found at {}".format(cfg.RESUME_FROM_FILE)
     logger.info("Loading checkpoint from file at '{}'".format(cfg.RESUME_FROM_FILE))
@@ -89,14 +75,9 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, resume_fro
     logger.info("Loaded checkpoint '{}' (iter {})".format(cfg.RESUME_FROM_FILE, start_iteration))
 
     logger.info("Training starts..")
-    training_iteration = start_iteration
-    training_iteration = 7 # add this to resume may 11th training.
     with torch.no_grad():
         model.eval()
         logger.info("Evaluating..")
-        # accuracy, exact_match, target_accuracy = evaluate()
-        test_exact_match = 0
-        test_accuracy = 0
         print(val_iters)
         for split_name, val_iter in val_iters.items():
             accuracy, exact_match, target_accuracy = evaluate(
@@ -106,11 +87,10 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool, resume_fro
                 eos_idx=eos_idx,
                 max_examples_to_evaluate=None)
             logger.info(" %s Accuracy: %5.2f Exact Match: %5.2f "
-                            " Target Accuracy: %5.2f " % (split_name, accuracy, exact_match, target_accuracy))
+                        " Target Accuracy: %5.2f " % (split_name, accuracy, exact_match, target_accuracy))
 
 
 def main(flags, use_cuda):
-
     train_data_path = os.path.join(cfg.DATA_DIRECTORY, "train.json")
 
     test_splits = [
@@ -124,7 +104,7 @@ def main(flags, use_cuda):
         'adverb_2',
         'contextual',
     ]
-    val_data_paths = {split_name: os.path.join(cfg.DATA_DIRECTORY, split_name + '.json') for split_name in test_splits}  # \TODO val dataset not exist
+    val_data_paths = {split_name: os.path.join(cfg.DATA_DIRECTORY, split_name + '.json') for split_name in test_splits}
 
     if cfg.MODE == "train":
         train(train_data_path=train_data_path, val_data_paths=val_data_paths, use_cuda=use_cuda,

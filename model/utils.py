@@ -1,20 +1,16 @@
-from typing import List, Iterator
+import json
 import logging
 import time
-import json
+from typing import List, Iterator
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-
-from model.config import cfg
 
 logger = logging.getLogger(__name__)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
 
 
 def tiny_value_of_dtype(dtype: torch.dtype):
@@ -52,6 +48,7 @@ def min_value_of_dtype(dtype: torch.dtype):
     """
     return info_value_of_dtype(dtype).min
 
+
 def sequence_mask(sequence_lengths: torch.LongTensor, max_len=None) -> torch.tensor:
     """
     Create a sequence mask that masks out all indices larger than some sequence length as defined by
@@ -75,9 +72,8 @@ def sequence_mask(sequence_lengths: torch.LongTensor, max_len=None) -> torch.ten
     return sequence_range_expand < seq_length_expand
 
 
-
 def masked_softmax(
-    vector: torch.Tensor, mask: torch.BoolTensor, dim: int = -1, memory_efficient: bool = True,
+        vector: torch.Tensor, mask: torch.BoolTensor, dim: int = -1, memory_efficient: bool = True,
 ) -> torch.Tensor:
     """
     `torch.nn.functional.softmax(vector)` does not work if some elements of `vector` should be
@@ -105,13 +101,12 @@ def masked_softmax(
             result = torch.nn.functional.softmax(vector * mask, dim=dim)
             result = result * mask
             result = result / (
-                result.sum(dim=dim, keepdim=True) + tiny_value_of_dtype(result.dtype)
+                    result.sum(dim=dim, keepdim=True) + tiny_value_of_dtype(result.dtype)
             )
         else:
             masked_vector = vector.masked_fill(~mask, min_value_of_dtype(vector.dtype))
             result = torch.nn.functional.softmax(masked_vector, dim=dim)
     return result
-
 
 
 def log_parameters(model):
@@ -145,12 +140,14 @@ def sequence_accuracy(prediction: List[int], target: List[int]) -> float:
         return 0.
     return (correct / total) * 100
 
+
 def array_to_sentence(self, sentence_array, vocab):
-    return[vocab.itos[word_idx] for word_idx in sentence_array]
+    return [vocab.itos[word_idx] for word_idx in sentence_array]
 
 
-def predict_and_save(dataset_iterator, model, output_file_path, max_decoding_steps, pad_idx, sos_idx, eos_idx, input_vocab, target_vocab,
-                    max_testing_examples=None,  **kwargs):
+def predict_and_save(dataset_iterator, model, output_file_path, max_decoding_steps, pad_idx, sos_idx, eos_idx,
+                     input_vocab, target_vocab,
+                     max_testing_examples=None, **kwargs):
     """
     Predict all data in dataset with a model and write the predictions to output_file_path.
     :param dataset: a dataset with test examples
@@ -165,11 +162,11 @@ def predict_and_save(dataset_iterator, model, output_file_path, max_decoding_ste
         output = []
         with torch.no_grad():
             i = 0
-            for (x, output_sequence, attention_weights_commands, attention_weights_situations, auxiliary_accuracy_target) in predict(
-                dataset_iterator, model=model, max_decoding_steps=max_decoding_steps,
-                pad_idx=pad_idx, sos_idx=sos_idx,
-                eos_idx=eos_idx):
-
+            for (x, output_sequence, attention_weights_commands, attention_weights_situations,
+                 auxiliary_accuracy_target) in predict(
+                    dataset_iterator, model=model, max_decoding_steps=max_decoding_steps,
+                    pad_idx=pad_idx, sos_idx=sos_idx,
+                    eos_idx=eos_idx):
                 i += 1
                 input_sequence = x.input
                 target_sequence = x.target
@@ -181,14 +178,14 @@ def predict_and_save(dataset_iterator, model, output_file_path, max_decoding_ste
                 target_str_sequence = target_str_sequence[1:-1]  # Get rid of <SOS> and <EOS>
                 output_str_sequence = array_to_sentence(output_sequence, vocabulary="target")
                 output.append({"input": input_str_sequence, "prediction": output_str_sequence,
-                               #"derivation": derivation_spec,
-                               "target": target_str_sequence, 
-                               #"situation": situation_spec,
+                               # "derivation": derivation_spec,
+                               "target": target_str_sequence,
+                               # "situation": situation_spec,
                                "attention_weights_input": attention_weights_commands,
                                "attention_weights_situation": attention_weights_situations,
                                "accuracy": accuracy,
                                "exact_match": True if accuracy == 100 else False,
-                               "position_accuracy":  auxiliary_accuracy_target})
+                               "position_accuracy": auxiliary_accuracy_target})
         logger.info("Wrote predictions for {} examples.".format(i))
         json.dump(output, outfile, indent=4)
     return output_file_path
@@ -236,13 +233,11 @@ def predict(data_iterator: Iterator, model: nn.Module, max_decoding_steps: int, 
             model.tanh(model.enc_hidden_to_dec_hidden(encoded_input["hidden_states"])))
         '''
 
-        # token = torch.tensor([sos_idx], dtype=torch.long, device=device)
         output_tokens = torch.zeros((batchsize, 1), dtype=torch.long, device=device) + sos_idx
         decoding_iteration = 0
         attention_weights_commands = []
         attention_weights_situations = []
 
-        # while token != eos_idx and decoding_iteration <= max_decoding_steps:
         real_decoding_steps = min(max_decoding_steps, x.target[0].shape[1] - 1)
         while decoding_iteration < real_decoding_steps:
             (output, hidden, context_situation, attention_weights_command,
@@ -253,38 +248,25 @@ def predict(data_iterator: Iterator, model: nn.Module, max_decoding_steps: int, 
             output = F.log_softmax(output, dim=-1)
             token = output.max(dim=-1)[1]
             output_tokens = torch.cat([output_tokens, token.unsqueeze(1)], dim=1)
-            # output_sequence.append(token.data[0].item())
             attention_weights_commands.append(attention_weights_command.tolist())
             attention_weights_situations.append(attention_weights_situation.tolist())
             contexts_situation.append(context_situation.unsqueeze(1))
             decoding_iteration += 1
 
-        # if output_sequence[-1] == eos_idx:
-        #     output_sequence.pop()
-        #     attention_weights_commands.pop()
-        #     attention_weights_situations.pop()
-
-        # for i in range(min(max_decoding_steps, x.target[1]) + 1):
-        #     target_sequence.append(x.target[0][0].data[0].item())
-        # target_sequence = target_sequence[1:]
-
         if model.auxiliary_task:
             target_position_scores = model.auxiliary_task_forward(torch.cat(contexts_situation, dim=1).sum(dim=1))
-            auxiliary_accuracy_target = model.get_auxiliary_accuracy(target_position_scores, x.target) #\TODO x.target add ground truth position information.
+            auxiliary_accuracy_target = model.get_auxiliary_accuracy(target_position_scores,
+                                                                     x.target)
         else:
             auxiliary_accuracy_target = 0
-            auxiliary_accuracy_agent = 0
-            #\TODO we never even predict aux_acc_agent
-        yield (x, output_tokens, x.target[0][:, :real_decoding_steps + 1], attention_weights_commands, attention_weights_situations, auxiliary_accuracy_target)
-        # yield (input_sequence, derivation_spec, situation_spec, output_sequence, target_sequence,
-        #        attention_weights_commands, attention_weights_situations, auxiliary_accuracy_target)
+        yield (x, output_tokens, x.target[0][:, :real_decoding_steps + 1], attention_weights_commands,
+               attention_weights_situations, auxiliary_accuracy_target)
 
     elapsed_time = time.time() - start_time
-    # logging.info("Predicted for {} examples.".format(i * bat))
     logging.info("Done predicting in {} seconds.".format(elapsed_time))
 
 
-def evaluate(data_iterator, model, max_decoding_steps, pad_idx, sos_idx, eos_idx, max_examples_to_evaluate=None):  # \TODO evaluate function might be broken now. This is Ruis' code.
+def evaluate(data_iterator, model, max_decoding_steps, pad_idx, sos_idx, eos_idx, max_examples_to_evaluate=None):
     target_accuracies = []
     exact_match = 0
     num_examples = 0
@@ -293,12 +275,9 @@ def evaluate(data_iterator, model, max_decoding_steps, pad_idx, sos_idx, eos_idx
     for batch, output_sequence, target_sequence, _, _, aux_acc_target in predict(
             data_iterator=data_iterator, model=model, max_decoding_steps=max_decoding_steps, pad_idx=pad_idx,
             sos_idx=sos_idx, eos_idx=eos_idx, max_examples_to_evaluate=max_examples_to_evaluate):
-        # accuracy = sequence_accuracy(output_sequence, target_sequence[0].tolist()[1:-1])
-        # accuracy = sequence_accuracy(output_sequence, target_sequence)
         num_examples += output_sequence.shape[0]
         seq_eq = torch.eq(output_sequence, target_sequence)
         mask = torch.eq(target_sequence, pad_idx) + torch.eq(target_sequence, sos_idx)
-        # torch.eq(target_sequence, eos_idx)
         seq_eq.masked_fill_(mask, 0)
         total = (~mask).sum(-1).float()
         accuracy = seq_eq.sum(-1) / total
@@ -308,6 +287,7 @@ def evaluate(data_iterator, model, max_decoding_steps, pad_idx, sos_idx, eos_idx
         target_accuracies.append(aux_acc_target)
     return (float(correct_terms) / total_terms) * 100, (exact_match / num_examples) * 100, \
            float(np.mean(np.array(target_accuracies))) * 100
+
 
 def translate_sequence(seq: np.array, itos: list, eos_idx: int) -> list:
     # seq: bs x timesteps

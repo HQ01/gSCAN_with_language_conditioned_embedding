@@ -1,10 +1,3 @@
-import logging
-
-import torch
-from torch import nn
-import torch.nn.functional as F
-import numpy as np
-
 from .config import cfg
 from .utils import *
 
@@ -15,9 +8,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Encoder(nn.Module):
     def __init__(self, pad_idx, input_size):
-        super().__init__()        # general
-        # self.embeddingsVar = nn.Parameter(
-        #     torch.Tensor(embInit), requires_grad=(not args.WRD_EMB_FIXED))
+        super().__init__()  # general
         self.device = device
 
         # configs
@@ -25,27 +16,19 @@ class Encoder(nn.Module):
         self.d_embed = cfg.CMD_D_EMBED
 
         # layers
-        self.embedding = nn.Embedding(self.d_x, self.d_embed, padding_idx = pad_idx) #\Pay attention to whether d_x include sos, eos, etc.
+        self.embedding = nn.Embedding(self.d_x, self.d_embed,
+                                      padding_idx=pad_idx)  # \Pay attention to whether d_x include sos, eos, etc.
         self.enc_input_drop = nn.Dropout(1 - cfg.encInputDropout)
         self.rnn0 = BiLSTM()
         self.cmd_h_drop = nn.Dropout(1 - cfg.cmdDropout)
 
-
     def forward(self, cmdIdx, cmdLengths):
-        # Word embedding
-        # embeddingsVar = self.embeddingsVar.to(self.device)
-        # embeddings = torch.cat(
-        #     [torch.zeros(1, self.d_embed, device='cuda'), embeddingsVar],
-        #     dim=0)
-        # No need for word embedding init
-        # embeddings = embeddingsVar
         cmd = self.embedding(cmdIdx)
         cmd = self.enc_input_drop(cmd)
 
         # RNN (LSTM)
-        cmds_out, cmds_h = self.rnn0(cmd, cmdLengths) #\TODO check why max length increase by 1 after lstm
+        cmds_out, cmds_h = self.rnn0(cmd, cmdLengths)
         cmds_h = self.cmd_h_drop(cmds_h)
-
 
         return cmds_out, cmds_h
 
@@ -57,10 +40,10 @@ class BiLSTM(nn.Module):
             input_size=cfg.CMD_D_EMBED, hidden_size=cfg.CMD_D_ENC // 2,
             num_layers=1, batch_first=True, bidirectional=True)
 
-        d = cfg.CMD_D_ENC // 2 # before is ENC_DIM
+        d = cfg.CMD_D_ENC // 2  # before is ENC_DIM
 
         # initialize LSTM weights (to be consistent with TensorFlow)
-        fan_avg = (d*4 + (d+cfg.CMD_D_EMBED)) / 2.
+        fan_avg = (d * 4 + (d + cfg.CMD_D_EMBED)) / 2.
         bound = np.sqrt(3. / fan_avg)
         nn.init.uniform_(self.bilstm.weight_ih_l0, -bound, bound)
         nn.init.uniform_(self.bilstm.weight_hh_l0, -bound, bound)
@@ -69,11 +52,11 @@ class BiLSTM(nn.Module):
 
         # initialize LSTM forget gate bias (to be consistent with TensorFlow)
         self.bilstm.bias_ih_l0.data[...] = 0.
-        self.bilstm.bias_ih_l0.data[d:2*d] = forget_gate_bias
+        self.bilstm.bias_ih_l0.data[d:2 * d] = forget_gate_bias
         self.bilstm.bias_hh_l0.data[...] = 0.
         self.bilstm.bias_hh_l0.requires_grad = False
         self.bilstm.bias_ih_l0_reverse.data[...] = 0.
-        self.bilstm.bias_ih_l0_reverse.data[d:2*d] = forget_gate_bias
+        self.bilstm.bias_ih_l0_reverse.data[d:2 * d] = forget_gate_bias
         self.bilstm.bias_hh_l0_reverse.data[...] = 0.
         self.bilstm.bias_hh_l0_reverse.requires_grad = False
 

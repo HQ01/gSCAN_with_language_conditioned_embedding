@@ -32,12 +32,7 @@ cfg = __C
 # --------------------------------------------------------------------------- #
 ##OS options
 __C.DATA_DIRECTORY = "data/parsed_dataset"
-#__C.DATA_DIRECTORY = "/root/cse395t_project/data/sampled_parsed_dataset"
-# __C.DATA_DIRECTORY = "data/sampled_dataset"
 __C.OUTPUT_DIRECTORY = "output"
-# __C.MODEL_NAME = "June16_lstm2"
-# __C.RESUME_FROM_FILE = "output/lstm1_2checkpoint.3th.tar"
-# __C.RESUME_FROM_FILE = ""
 __C.EXP_NAME = '<fill-with-filename>'
 __C.OUTPUT_FILE_NAME = "predict.json"
 __C.MODE = "train"
@@ -61,7 +56,6 @@ __C.CMD_D_ENC = 64
 __C.CMD_D_H = 64 # Same as ENC_DIM
 
 ## Situation Encoder (LGCN)
-# __C.SITU_D_FEAT = 16
 __C.SITU_D_FEAT = 64 # 3 * D_CNN_OUTPUT if CNN then LGCN
 __C.SITU_D_CTX = 64 # 512
 __C.SITU_D_CMD = 64 # 512

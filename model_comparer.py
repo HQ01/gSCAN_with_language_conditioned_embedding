@@ -9,9 +9,10 @@ from model.config import cfg
 from model.model import GSCAN_model
 from model.utils import *
 from GroundedScan.dataset import GroundedScan
+import dill
 
-model_file = "output_model/model_best.pth.tar"
-baseline_file = "output/model_best.pth.tar"
+model_file = "output/full3_8/model_best.pth.tar"
+baseline_file = "output/baseline3/model_best.pth.tar"
 
 def exact_match_indicator(data_iterator, model, max_decoding_steps, pad_idx, sos_idx, eos_idx,
                 max_examples_to_evaluate=None):  # \TODO evaluate function might be broken now. This is Ruis' code.
@@ -108,12 +109,11 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
     device = torch.device(type='cuda') if use_cuda else torch.device(type='cpu')
 
     logger.info("Loading Training set...")
-    logger.info(cfg.MODEL_NAME)
-    # train_iter, train_input_vocab, train_target_vocab = dataloader(train_data_path,
-    #                                                                batch_size=cfg.TRAIN.BATCH_SIZE,
-    #                                                                use_cuda=use_cuda)  # \TODO add k and statistics and shuffling
-    train_input_vocab, train_target_vocab = pickle.load(open('input_vocab.dict','rb')), \
-                                            pickle.load(open('target_vocab.dict','rb'))
+    train_iter, train_input_vocab, train_target_vocab = dataloader(train_data_path,
+                                                                   batch_size=cfg.TRAIN.BATCH_SIZE,
+                                                                   use_cuda=use_cuda)  # \TODO add k and statistics and shuffling
+    # train_input_vocab, train_target_vocab = pickle.load(open('input_vocab.dict','rb')), \
+    #                                         pickle.load(open('target_vocab.dict','rb'))
     val_iters = {}
     for split_name, path in val_data_paths.items():
         val_iters[split_name], _, _ = dataloader(path, batch_size=cfg.VAL_BATCH_SIZE, use_cuda=use_cuda,
@@ -143,8 +143,9 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
     _ = baseline.load_model(baseline_file)
 
     # laod the stupid Dataset
-    original_dataset = GroundedScan.load_dataset_from_file("/root/multimodal_seq2seq_gSCAN/data/compositional_splits/dataset.txt",
-                                                            save_directory="stat/", k=10)
+    # original_dataset = GroundedScan.load_dataset_from_file("/root/multimodal_seq2seq_gSCAN/data/compositional_splits/dataset.txt",
+    #                                                         save_directory="stat/", k=10)
+    original_dataset = dill.load(open('original_dataset.p', 'rb'))
     # original_dataset=None
 
     with torch.no_grad():
@@ -158,17 +159,20 @@ def train(train_data_path: str, val_data_paths: dict, use_cuda: bool):
                 sos_idx=sos_idx,
                 eos_idx=eos_idx,
                 max_examples_to_evaluate=None)
-            # baseline_exact_match = exact_match_indicator(
-            #     val_iter, model=baseline,
-            #     max_decoding_steps=30, pad_idx=pad_idx,
-            #     sos_idx=sos_idx,
-            #     eos_idx=eos_idx,
-            #     max_examples_to_evaluate=None)
-            # model_diff = torch.bitwise_xor(model_exact_match, baseline_exact_match)
-            # model_better_exs = torch.bitwise_and(model_diff, model_exact_match)
+            baseline_exact_match = exact_match_indicator(
+                val_iter, model=baseline,
+                max_decoding_steps=30, pad_idx=pad_idx,
+                sos_idx=sos_idx,
+                eos_idx=eos_idx,
+                max_examples_to_evaluate=None)
+            model_diff = torch.bitwise_xor(model_exact_match, baseline_exact_match)
+            model_better_exs = torch.bitwise_and(model_diff, model_exact_match)
             # predict_and_write(val_iter, model, model_exact_match, 30, input_vocab=train_input_vocab,
             #                   target_vocab=train_target_vocab, out='model_good/'+split_name + '_predict.json',
-            #                   split_name=split_name, original_dataset=original_dataset)
+            #                   split_name=split_name, original_dataset=original_dataset, max_examples_to_output=20)
+            predict_and_write(val_iter, baseline, model_better_exs, 30, input_vocab=train_input_vocab,
+                              target_vocab=train_target_vocab, out='model_good_bl_fail/'+split_name + '_predict.json',
+                              split_name=split_name, original_dataset=original_dataset, max_examples_to_output=200)
             predict_and_write(val_iter, model, ~model_exact_match, 30, input_vocab=train_input_vocab,
                               target_vocab=train_target_vocab, out='model_bad/'+split_name + '_predict.json',
                               split_name=split_name, original_dataset=original_dataset, max_examples_to_output=200)
@@ -184,13 +188,7 @@ def main(flags, use_cuda):
     train_data_path = os.path.join(cfg.DATA_DIRECTORY, "train.json")
 
     test_splits = [
-        'situational_1',
-        # 'situational_2',
-        # 'visual',
-        # 'visual_easier',
-        # 'adverb_1',
-        # 'adverb_2',
-        # 'contextual',
+        'adverb_2',
     ]
     # test_splits = ['dev']
     val_data_paths = {split_name: os.path.join(cfg.DATA_DIRECTORY, split_name + '.json') for split_name in test_splits}  # \TODO val dataset not exist

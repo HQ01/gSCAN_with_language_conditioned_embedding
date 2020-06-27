@@ -56,12 +56,17 @@ class GSCAN_model(nn.Module):
         # if LGCN first then CNN && embedding, num_channels = cfg.SITU_D_CTX, num_conv_channels = 50, SITU_D_FEAT = 256
         self.situation_encoder = None
         if is_baseline:
-            self.situation_encoder = ConvolutionalNet(num_channels=64,
+            # self.situation_encoder = ConvolutionalNet(num_channels=64,
+            #                                           cnn_kernel_size=7,
+            #                                           num_conv_channels=50,
+            #                                           dropout_probability=0.1,
+            #                                           flatten_output=True)  # ablation
+            self.situation_encoder = ConvolutionalNet(num_channels=16,
                                                       cnn_kernel_size=7,
                                                       num_conv_channels=50,
                                                       dropout_probability=0.1,
-                                                      flatten_output=True)
-            self.decoder = Decoder(target_vocab_size, pad_idx, visual_key_size=50 * 3)
+                                                      flatten_output=True)  # baseline
+            self.decoder = Decoder(target_vocab_size, pad_idx, visual_key_size=50 * 3, is_baseline=is_baseline)
         else:
             self.situation_encoder = ConvolutionalNet(num_channels=cfg.SITU_D_CTX,
                                                       cnn_kernel_size=7,
@@ -69,7 +74,7 @@ class GSCAN_model(nn.Module):
                                                       dropout_probability=0.1,
                                                       flatten_output=True)
             self.lgcn = LGCNLayer()
-            self.decoder = Decoder(target_vocab_size, pad_idx)
+            self.decoder = Decoder(target_vocab_size, pad_idx, is_baseline=is_baseline)
 
         if multigpu:
             raise Exception("Buggy implmentation!")
@@ -168,7 +173,8 @@ class GSCAN_model(nn.Module):
 
 
         if self.is_baseline:
-            situation_out = self.situation_encoder(embedded_situation)
+            # situation_out = self.situation_encoder(embedded_situation)  # ablation
+            situation_out = self.situation_encoder(situation_batch)  # baseline
             batch_size, image_num_memory, _ = situation_out.size()
             situations_lengths = [image_num_memory for _ in range(batch_size)]
         else:

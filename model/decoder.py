@@ -61,7 +61,7 @@ class BahdanauAttentionDecoderRNN(nn.Module):
 
     def __init__(self, hidden_size: int, output_size: int, num_layers: int, textual_attention: Attention,
                  visual_attention: Attention, dropout_probability=0.1, padding_idx=0,
-                 conditional_attention=False):
+                 conditional_attention=False, is_baseline=True):
         """
         :param hidden_size: number of hidden units in RNN, and embedding size for output symbols
         :param output_size: number of output symbols
@@ -85,6 +85,7 @@ class BahdanauAttentionDecoderRNN(nn.Module):
         self.output_to_hidden = nn.Linear(hidden_size * 4, hidden_size, bias=False)
         self.hidden_to_output = nn.Linear(hidden_size, output_size, bias=False)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.is_baseline = is_baseline
 
     def forward_step(self, input_tokens, last_hidden,
                      encoded_commands, commands_lengths,
@@ -150,14 +151,15 @@ class BahdanauAttentionDecoderRNN(nn.Module):
 
         # Concatenate all outputs and project to output size.
         # TODO: what does pre_output do here??
-        '''
-        pre_output = torch.cat([embedded_input, lstm_output,
-                                context_command.transpose(0, 1), context_situation.transpose(0, 1)], dim=2)
-        pre_output = self.output_to_hidden(pre_output)  # [1, batch_size, hidden_size]
-        output = self.hidden_to_output(pre_output)  # [batch_size, output_size]
-        '''
+        # next 3 lines are for original output
+        if self.is_baseline:
+            pre_output = torch.cat([embedded_input, lstm_output,
+                                    context_command.transpose(0, 1), context_situation.transpose(0, 1)], dim=2)
+            pre_output = self.output_to_hidden(pre_output)  # [1, batch_size, hidden_size]
+            output = self.hidden_to_output(pre_output)  # [1, batch_size, output_size]
+        else:
+            output = self.hidden_to_output(lstm_output)
 
-        output = self.hidden_to_output(lstm_output)
         output = output.squeeze(dim=0)   # [batch_size, output_size]
 
         return (output, hidden, attention_weights_situations.squeeze(dim=1), attention_weights_commands,
@@ -254,7 +256,7 @@ class BahdanauAttentionDecoderRNN(nn.Module):
 
 class Decoder(nn.Module):
     def __init__(self, target_vocab_size, target_pad_idx, visual_key_size=cfg.SITU_D_CNN_OUTPUT*3,\
-            visual_query_size=cfg.DEC_D_H, visual_hidden_size=cfg.DEC_D_H): #\TODO: does target vocab size include special tokens?
+            visual_query_size=cfg.DEC_D_H, visual_hidden_size=cfg.DEC_D_H, is_baseline=True): #\TODO: does target vocab size include special tokens?
         super().__init__()
         # if CNN then LGCN: visual_key_size = cfg.SITU_D_CTX
         self.visual_attention = Attention(key_size = visual_key_size,\
@@ -269,7 +271,8 @@ class Decoder(nn.Module):
                                                             padding_idx=target_pad_idx,
                                                             textual_attention=self.textual_attention,
                                                             visual_attention=self.visual_attention,
-                                                            conditional_attention = cfg.DEC_CONDITIONAL_ATTENTION)
+                                                            conditional_attention = cfg.DEC_CONDITIONAL_ATTENTION,
+                                                            is_baseline=is_baseline)
         
         self.tanh = nn.Tanh()
         self.enc_hidden_to_dec_hidden = nn.Linear(cfg.CMD_D_H, cfg.DEC_D_H)

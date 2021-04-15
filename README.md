@@ -11,24 +11,22 @@ Then move `parsed_dataset.txt` to `parsed_dataset/` in this repo and run `prepro
 
 # Environment
 
-We use the same environment as the [baseline](https://github.com/LauraRuis/multimodal_seq2seq_gSCAN), plus [dgl library](https://www.dgl.ai/pages/start.html).
+We use the same environment as the [baseline](https://github.com/LauraRuis/multimodal_seq2seq_gSCAN), and [dgl library](https://www.dgl.ai/pages/start.html).
 
 # Training
-``
+```
 python main_model.py
-``
-
-## Parameters
-Model parameters are defined in `model/config.py`, but we support quick setting through command line.
+```
+Model parameters are defined in `model/config.py`, some common settings can also be modified through command line.
 - `--run exp_name` Set the experiment name
 - `--txt` If enabled, the model redirects all of the outputs to exp/exp_name.txt
 - `--load path_to_model` Load the checkpoint
 - `--baseline` Switch the model to baseline
 
 # Model Comparision
-Run two models on same data splits and compare their results. Results are saved in json format that is compatible with the visualization code from gSCAN.
+As part of our experiments, we ran two models on the same data split and compared their results. Results are saved in json format that is compatible with the visualization code from gSCAN.
 
-Note: Modify `model_compare.py` to define the path to models' checkpoints.
+Note: Remember to change the paths to models' checkpoints in `model_compare.py` before running.
 ``
 python model_compare.py
 ``
